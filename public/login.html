@@ -183,6 +183,20 @@
             font-size: 12px;
         }
 
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
         @media (max-width: 480px) {
             .login-container {
                 padding: 30px 20px;
@@ -255,7 +269,7 @@
             }
             
             loginBtn.disabled = true;
-            loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Signing in...';
+            loginBtn.innerHTML = '<div class="loading-spinner"></div> Signing in...';
             errorDiv.classList.remove('show');
             
             try {
@@ -269,12 +283,13 @@
                 
                 if (data.success) {
                     sessionStorage.setItem('user', JSON.stringify(data.user));
-                    window.location.href = 'index.html';
+                    window.location.href = '/index.html';
                 } else {
                     errorText.textContent = data.message || 'Invalid username or password';
                     errorDiv.classList.add('show');
                 }
             } catch (error) {
+                console.error('Login error:', error);
                 errorText.textContent = 'Error connecting to server. Make sure the server is running.';
                 errorDiv.classList.add('show');
             } finally {
@@ -287,6 +302,10 @@
             if (e.key === 'Enter') {
                 document.getElementById('loginForm').dispatchEvent(new Event('submit'));
             }
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('username').focus();
         });
     </script>
 </body>

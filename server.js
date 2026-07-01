@@ -4,39 +4,154 @@ const cors = require('cors');
 const path = require('path');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// PostgreSQL Connection - UPDATE YOUR PASSWORD!
+// Serve login.html at root
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// PostgreSQL Connection - Use environment variable for production
 const pool = new Pool({
-    host: 'localhost',
-    port: 5432,
-    user: 'postgres',
-    password: '535680',  // ← CHANGE THIS TO YOUR POSTGRESQL PASSWORD
-    database: 'Data Pool'
+    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:535680@localhost:5432/break_tracker_db',
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    connectionTimeoutMillis: 5000,
 });
 
 // Test database connection
 pool.connect((err, client, release) => {
     if (err) {
-        console.error('❌ Database connection failed:', err.stack);
-    } else {
-        console.log('✅ Connected to PostgreSQL successfully!');
-        release();
+        console.error('❌ Database connection failed:', err.message);
+        return;
     }
+    console.log('✅ Connected to PostgreSQL successfully!');
+    release();
 });
 
 // =============================================
-// AUTHENTICATION ROUTES
+// CREATE TABLES FUNCTION (for production)
 // =============================================
 
-// 1. Login
+async function createTables() {
+    try {
+        // Create employees table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS employees (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL UNIQUE,
+                total_break_allowance INTERVAL DEFAULT '2 hours 30 minutes',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('✅ employees table created');
+
+        // Create break_log table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS break_log (
+                id SERIAL PRIMARY KEY,
+                employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+                break_date DATE NOT NULL,
+                break_out TIME NOT NULL,
+                break_in TIME,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT valid_break_times CHECK (break_in IS NULL OR break_in > break_out)
+            )
+        `);
+        console.log('✅ break_log table created');
+
+        // Create users table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) NOT NULL UNIQUE,
+                password VARCHAR(100) NOT NULL,
+                role VARCHAR(20) DEFAULT 'user',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('✅ users table created');
+
+        // Create indexes
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_break_log_employee_date 
+            ON break_log(employee_id, break_date)
+        `);
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_break_log_active 
+            ON break_log(employee_id, break_date) 
+            WHERE break_in IS NULL
+        `);
+        console.log('✅ Indexes created');
+
+        // Insert default admin
+        const adminCheck = await pool.query('SELECT id FROM users WHERE username = $1', ['admin']);
+        if (adminCheck.rows.length === 0) {
+            await pool.query(
+                'INSERT INTO users (username, password, role) VALUES ($1, $2, $3)',
+                ['admin', 'admin123', 'admin']
+            );
+            console.log('✅ Default admin user created');
+        }
+
+        // Insert default employees
+        const defaultEmployees = [
+            'Pradeep Singh', 'Arunava Hazra', 'Sonu Shaw', 'Ashish Mushla',
+            'Modallil Ahmed Baig', 'Vicky Patel', 'Souvik Nag', 'Chandan Gupta',
+            'Hemang Kerung', 'Devbrat Ojha', 'MD Safik Kureshi', 'Mithilesh Saini',
+            'Lokender Singh', 'Pushkar Kathik', 'Vikash Bundela', 'Mahalu Chaudhari',
+            'Sanjay Shrestha', 'Ayush Gupta'
+        ];
+
+        for (const empName of defaultEmployees) {
+            const empCheck = await pool.query('SELECT id FROM employees WHERE name = $1', [empName]);
+            if (empCheck.rows.length === 0) {
+                await pool.query('INSERT INTO employees (name) VALUES ($1)', [empName]);
+            }
+        }
+        console.log('✅ Default employees created');
+
+        // Create user for Pradeep Singh
+        const userCheck = await pool.query('SELECT id FROM users WHERE username = $1', ['Pradeep Singh']);
+        if (userCheck.rows.length === 0) {
+            await pool.query(
+                'INSERT INTO users (username, password, role) VALUES ($1, $2, $3)',
+                ['Pradeep Singh', 'user123', 'user']
+            );
+            console.log('✅ Default user created');
+        }
+        
+        console.log('✅ All tables and default data created successfully!');
+    } catch (error) {
+        console.error('❌ Error creating tables:', error);
+    }
+}
+
+// Call createTables on startup
+createTables();
+
+// =============================================
+// API ROUTES (Same as before - keep all your routes)
+// =============================================
+
+// Test route
+app.get('/api/test', (req, res) => {
+    res.json({ 
+        success: true, 
+        message: 'Server is running!',
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development'
+    });
+});
+
+// Login
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
+    console.log('🔐 Login attempt:', username);
     
     try {
         const result = await pool.query(
@@ -46,6 +161,7 @@ app.post('/api/login', async (req, res) => {
         
         if (result.rows.length > 0) {
             const user = result.rows[0];
+            console.log('✅ Login successful:', username);
             res.json({
                 success: true,
                 user: {
@@ -55,15 +171,22 @@ app.post('/api/login', async (req, res) => {
                 }
             });
         } else {
-            res.status(401).json({ success: false, message: 'Invalid username or password' });
+            console.log('❌ Login failed:', username);
+            res.status(401).json({ 
+                success: false, 
+                message: 'Invalid username or password' 
+            });
         }
     } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ success: false, message: error.message });
+        console.error('❌ Login error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error: ' + error.message 
+        });
     }
 });
 
-// 2. Get all users (Admin only)
+// Get all users
 app.get('/api/users', async (req, res) => {
     try {
         const result = await pool.query('SELECT id, username, role, created_at FROM users ORDER BY username');
@@ -74,21 +197,27 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
-// 3. Add new user (Admin only)
+// Add new user
 app.post('/api/users', async (req, res) => {
     const { username, password, role } = req.body;
     
     try {
-        // Check if user exists
         const existing = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
         if (existing.rows.length > 0) {
             return res.status(400).json({ error: 'Username already exists' });
         }
         
-        // Check if employee exists
-        const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [username]);
+        let employee = await pool.query('SELECT id FROM employees WHERE name = $1', [username]);
+        let employeeCreated = false;
+        
         if (employee.rows.length === 0) {
-            return res.status(400).json({ error: 'Employee not found. Please add employee first.' });
+            const newEmployee = await pool.query(
+                'INSERT INTO employees (name) VALUES ($1) RETURNING id',
+                [username]
+            );
+            employee = newEmployee;
+            employeeCreated = true;
+            console.log(`✅ Auto-created employee: ${username}`);
         }
         
         const result = await pool.query(
@@ -96,37 +225,41 @@ app.post('/api/users', async (req, res) => {
             [username, password || 'user123', role || 'user']
         );
         
-        res.json({ success: true, user: result.rows[0] });
+        const message = employeeCreated 
+            ? `User "${username}" added successfully! Employee auto-created.` 
+            : `User "${username}" added successfully!`;
+        
+        res.json({ 
+            success: true, 
+            user: result.rows[0],
+            message: message
+        });
     } catch (error) {
         console.error('Error adding user:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// 4. Update username (Admin only)
+// Update username
 app.put('/api/users/:oldUsername/username', async (req, res) => {
     const { oldUsername } = req.params;
     const { newUsername } = req.body;
     
     try {
-        // Prevent admin rename
         if (oldUsername === 'admin') {
             return res.status(400).json({ error: 'Cannot rename admin user' });
         }
         
-        // Check if new username exists
         const existing = await pool.query('SELECT id FROM users WHERE username = $1', [newUsername]);
         if (existing.rows.length > 0) {
             return res.status(400).json({ error: 'Username already exists' });
         }
         
-        // Check if employee exists with new name
         const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [newUsername]);
         if (employee.rows.length === 0) {
             return res.status(400).json({ error: 'Employee not found. Please add employee first.' });
         }
         
-        // Update username
         await pool.query('UPDATE users SET username = $1 WHERE username = $2', [newUsername, oldUsername]);
         
         res.json({ success: true, message: `Username updated from "${oldUsername}" to "${newUsername}"` });
@@ -136,13 +269,12 @@ app.put('/api/users/:oldUsername/username', async (req, res) => {
     }
 });
 
-// 5. Reset password (Admin can reset any user, users can reset their own)
+// Reset password
 app.put('/api/users/:username/password', async (req, res) => {
     const { username } = req.params;
     const { newPassword, currentUser } = req.body;
     
     try {
-        // If not admin, verify they are resetting their own password
         if (currentUser && currentUser.role !== 'admin' && currentUser.username !== username) {
             return res.status(403).json({ error: 'You can only reset your own password' });
         }
@@ -156,7 +288,7 @@ app.put('/api/users/:username/password', async (req, res) => {
     }
 });
 
-// 6. Update user role (Admin only)
+// Update user role
 app.put('/api/users/:username', async (req, res) => {
     const { username } = req.params;
     const { role } = req.body;
@@ -174,12 +306,11 @@ app.put('/api/users/:username', async (req, res) => {
     }
 });
 
-// 7. Delete user (Admin only)
+// Delete user
 app.delete('/api/users/:username', async (req, res) => {
     const { username } = req.params;
     
     try {
-        // Prevent deleting admin
         if (username === 'admin') {
             return res.status(400).json({ error: 'Cannot delete admin user' });
         }
@@ -196,7 +327,7 @@ app.delete('/api/users/:username', async (req, res) => {
 // EMPLOYEE ROUTES
 // =============================================
 
-// 8. Get all employees
+// Get all employees
 app.get('/api/employees', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM employees ORDER BY name');
@@ -207,7 +338,7 @@ app.get('/api/employees', async (req, res) => {
     }
 });
 
-// 9. Add multiple employees at once
+// Add multiple employees
 app.post('/api/employees/bulk', async (req, res) => {
     const { employees } = req.body;
     
@@ -225,19 +356,46 @@ app.post('/api/employees/bulk', async (req, res) => {
     }
 });
 
-// 10. Delete an employee and all their breaks
+// Edit employee name
+app.put('/api/employees/:oldName', async (req, res) => {
+    const { oldName } = req.params;
+    const { newName } = req.body;
+    
+    try {
+        const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [oldName]);
+        if (employee.rows.length === 0) {
+            return res.status(404).json({ error: 'Employee not found' });
+        }
+        
+        const existing = await pool.query('SELECT id FROM employees WHERE name = $1', [newName]);
+        if (existing.rows.length > 0) {
+            return res.status(400).json({ error: 'Employee name already exists' });
+        }
+        
+        await pool.query('UPDATE employees SET name = $1 WHERE name = $2', [newName, oldName]);
+        await pool.query('UPDATE users SET username = $1 WHERE username = $2', [newName, oldName]);
+        
+        res.json({ 
+            success: true, 
+            message: `Employee renamed from "${oldName}" to "${newName}"`
+        });
+    } catch (error) {
+        console.error('Error editing employee:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete employee
 app.delete('/api/employees/:name', async (req, res) => {
     const { name } = req.params;
     
     try {
         const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [name]);
-        
         if (employee.rows.length === 0) {
             return res.status(404).json({ error: 'Employee not found' });
         }
         
         const employeeId = employee.rows[0].id;
-        
         await pool.query('DELETE FROM break_log WHERE employee_id = $1', [employeeId]);
         await pool.query('DELETE FROM employees WHERE id = $1', [employeeId]);
         
@@ -252,7 +410,7 @@ app.delete('/api/employees/:name', async (req, res) => {
 // BREAK ROUTES
 // =============================================
 
-// 11. Get currently active breaks (all employees on break)
+// Get active breaks
 app.get('/api/active-breaks', async (req, res) => {
     try {
         const query = `
@@ -274,22 +432,7 @@ app.get('/api/active-breaks', async (req, res) => {
     }
 });
 
-// 12. Get active breaks count
-app.get('/api/active-count', async (req, res) => {
-    try {
-        const result = await pool.query(`
-            SELECT COUNT(*) AS active_count
-            FROM break_log b
-            WHERE b.break_in IS NULL AND b.break_date = CURRENT_DATE
-        `);
-        res.json({ count: parseInt(result.rows[0].active_count) });
-    } catch (error) {
-        console.error('Error in /api/active-count:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// 13. Get break history for all employees (report)
+// Get break report
 app.get('/api/break-report', async (req, res) => {
     try {
         const query = `
@@ -312,7 +455,7 @@ app.get('/api/break-report', async (req, res) => {
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
             ORDER BY b.break_date DESC, b.break_out DESC
-            LIMIT 100
+            LIMIT 1000
         `;
         const result = await pool.query(query);
         res.json(result.rows);
@@ -322,7 +465,7 @@ app.get('/api/break-report', async (req, res) => {
     }
 });
 
-// 14. Get break summary for a specific employee
+// Get breaks for specific employee
 app.get('/api/breaks/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     
@@ -388,7 +531,7 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
     }
 });
 
-// 15. Check if employee has active break
+// Check active break
 app.get('/api/active-break/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     
@@ -414,13 +557,12 @@ app.get('/api/active-break/:employeeName', async (req, res) => {
     }
 });
 
-// 16. Add Break (start break)
+// Start break
 app.post('/api/break-out', async (req, res) => {
     const { employeeName, breakDate, breakOut } = req.body;
     
     try {
         let employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
-        
         if (employee.rows.length === 0) {
             const newEmp = await pool.query(
                 'INSERT INTO employees (name) VALUES ($1) RETURNING id',
@@ -430,7 +572,6 @@ app.post('/api/break-out', async (req, res) => {
         }
         
         const employeeId = employee.rows[0].id;
-        
         const activeBreak = await pool.query(
             `SELECT id FROM break_log 
              WHERE employee_id = $1 AND break_date = $2 AND break_in IS NULL`,
@@ -459,19 +600,17 @@ app.post('/api/break-out', async (req, res) => {
     }
 });
 
-// 17. Add Break In (end break)
+// End break
 app.post('/api/break-in', async (req, res) => {
     const { employeeName, breakDate, breakIn } = req.body;
     
     try {
         const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
-        
         if (employee.rows.length === 0) {
             return res.status(404).json({ error: 'Employee not found' });
         }
         
         const employeeId = employee.rows[0].id;
-        
         const activeBreak = await pool.query(
             `SELECT id, break_out FROM break_log 
              WHERE employee_id = $1 AND break_date = $2 AND break_in IS NULL
@@ -487,23 +626,17 @@ app.post('/api/break-in', async (req, res) => {
         }
         
         const breakId = activeBreak.rows[0].id;
-        
-        await pool.query(
-            `UPDATE break_log SET break_in = $1 WHERE id = $2`,
-            [breakIn, breakId]
-        );
+        await pool.query(`UPDATE break_log SET break_in = $1 WHERE id = $2`, [breakIn, breakId]);
         
         const duration = await pool.query(
             `SELECT (break_in - break_out) AS duration FROM break_log WHERE id = $1`,
             [breakId]
         );
         
-        const durationStr = duration.rows[0].duration;
-        
         res.json({ 
             success: true, 
             message: `✅ ${employeeName} ended break at ${breakIn}`,
-            duration: durationStr
+            duration: duration.rows[0].duration
         });
     } catch (error) {
         console.error('Error in /api/break-in:', error);
@@ -511,7 +644,7 @@ app.post('/api/break-in', async (req, res) => {
     }
 });
 
-// 18. Delete a break
+// Delete break
 app.delete('/api/breaks/:id', async (req, res) => {
     const { id } = req.params;
     
@@ -524,7 +657,7 @@ app.delete('/api/breaks/:id', async (req, res) => {
     }
 });
 
-// 19. Get today's summary for an employee
+// Get today's summary
 app.get('/api/today/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     
@@ -555,4 +688,5 @@ app.listen(PORT, () => {
     console.log(`📊 Open http://localhost:${PORT} in your browser`);
     console.log(`👤 Default Admin: admin / admin123`);
     console.log(`👤 Default User: Pradeep Singh / user123`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
 });

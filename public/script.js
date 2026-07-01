@@ -1,10 +1,9 @@
 // =============================================
-// API URL - Auto-detect local vs production
+// API URL - Auto-detect for production
 // =============================================
-const API_URL = window.location.hostname === 'localhost' 
+const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:3000' 
-    : '';
-
+    : ''; // Empty means use same domain in production
 // =============================================
 // AUTHENTICATION & USER MANAGEMENT
 // =============================================
@@ -59,6 +58,8 @@ const EMPLOYEES = [
 
 let currentEmployee = '';
 let refreshTimer = null;
+let reportData = [];
+let filteredReportData = [];
 
 // ===== INITIALIZATION =====
 document.addEventListener('DOMContentLoaded', function() {
@@ -67,6 +68,16 @@ document.addEventListener('DOMContentLoaded', function() {
     loadEmployees();
     loadEmployeeList();
     loadUsers();
+    
+    // Set default date range for report (last 30 days)
+    const today = new Date();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    
+    const dateToInput = document.getElementById('reportDateTo');
+    const dateFromInput = document.getElementById('reportDateFrom');
+    if (dateToInput) dateToInput.value = today.toISOString().split('T')[0];
+    if (dateFromInput) dateFromInput.value = thirtyDaysAgo.toISOString().split('T')[0];
 
     refreshTimer = setInterval(() => {
         if (currentEmployee) {
@@ -112,6 +123,7 @@ updateClock();
 function openReportModal() {
     document.getElementById('reportModal').classList.add('active');
     document.body.style.overflow = 'hidden';
+    loadReportEmployees();
     loadFullReport();
 }
 
@@ -218,7 +230,10 @@ async function loadEmployeeList() {
             div.innerHTML = `
                 <span class="name"><i class="fas fa-user" style="color:#1a73e8; margin-right:8px;"></i>${emp.name}</span>
                 <div class="actions">
-                    <button class="btn btn-danger btn-sm" onclick="deleteEmployee('${emp.name}')">
+                    <button class="btn btn-primary btn-sm" onclick="editEmployee('${emp.name}')" title="Edit Employee Name">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteEmployee('${emp.name}')" title="Delete Employee">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
@@ -227,6 +242,78 @@ async function loadEmployeeList() {
         });
     } catch (error) {
         console.error('Error loading employee list:', error);
+    }
+}
+
+async function editEmployee(oldName) {
+    const newName = prompt(`Enter new name for "${oldName}":`, oldName);
+    
+    if (!newName || newName === oldName) return;
+    
+    if (!confirm(`Are you sure you want to rename "${oldName}" to "${newName}"?`)) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/employees/${encodeURIComponent(oldName)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ newName })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showAlert(`✅ Employee renamed from "${oldName}" to "${newName}"!`, 'success');
+            
+            if (currentUser && currentUser.username === oldName) {
+                currentUser.username = newName;
+                sessionStorage.setItem('user', JSON.stringify(currentUser));
+                document.getElementById('userName').textContent = newName;
+            }
+            
+            await loadEmployeeList();
+            await loadEmployees();
+            
+            if (currentEmployee === oldName) {
+                currentEmployee = newName;
+                await onEmployeeChange();
+            }
+        } else {
+            showAlert('❌ ' + result.error, 'error');
+        }
+    } catch (error) {
+        showAlert('❌ Error connecting to server', 'error');
+    }
+}
+
+async function deleteEmployee(name) {
+    if (!confirm(`Are you sure you want to delete "${name}"? This will also delete all their break records.`)) return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/employees/${encodeURIComponent(name)}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            showAlert(`✅ Employee "${name}" deleted successfully!`, 'success');
+            
+            if (currentEmployee === name) {
+                currentEmployee = '';
+                document.getElementById('employeeSelect').value = '';
+                document.getElementById('selectedEmployeeDisplay').value = 'None selected';
+                document.getElementById('statusDisplay').innerHTML = 'Status: Idle';
+                document.getElementById('statusDisplay').style.background = '#e9ecef';
+                document.getElementById('employeeNameTitle').textContent = 'Select an employee';
+                document.getElementById('breakBody').innerHTML = '<tr><td colspan="10" class="no-data">Please select an employee</td></tr>';
+                document.getElementById('stats').innerHTML = '';
+            }
+            
+            await loadEmployeeList();
+            await loadEmployees();
+        } else {
+            showAlert('❌ Error deleting employee', 'error');
+        }
+    } catch (error) {
+        showAlert('❌ Error connecting to server', 'error');
     }
 }
 
@@ -253,26 +340,6 @@ async function addEmployee() {
             await loadEmployees();
         } else {
             showAlert('❌ Error adding employee', 'error');
-        }
-    } catch (error) {
-        showAlert('❌ Error connecting to server', 'error');
-    }
-}
-
-async function deleteEmployee(name) {
-    if (!confirm(`Are you sure you want to delete "${name}"? This will also delete all their break records.`)) return;
-
-    try {
-        const response = await fetch(`${API_URL}/api/employees/${encodeURIComponent(name)}`, {
-            method: 'DELETE'
-        });
-
-        if (response.ok) {
-            showAlert(`✅ Employee "${name}" deleted successfully!`, 'success');
-            await loadEmployeeList();
-            await loadEmployees();
-        } else {
-            showAlert('❌ Error deleting employee', 'error');
         }
     } catch (error) {
         showAlert('❌ Error connecting to server', 'error');
@@ -360,9 +427,10 @@ async function addUser() {
         const result = await response.json();
 
         if (response.ok) {
-            showAlert(`✅ User "${username}" added successfully!`, 'success');
+            showAlert(`✅ ${result.message || `User "${username}" added successfully!`}`, 'success');
             document.getElementById('newUsername').value = '';
             await loadUsers();
+            await loadEmployees();
         } else {
             showAlert('❌ ' + result.error, 'error');
         }
@@ -371,7 +439,6 @@ async function addUser() {
     }
 }
 
-// Edit Username
 async function editUsername(oldUsername) {
     const newUsername = prompt(`Enter new username for "${oldUsername}":`, oldUsername);
     
@@ -407,7 +474,6 @@ async function editUsername(oldUsername) {
     }
 }
 
-// Reset Password
 async function resetPassword(username) {
     const isOwnAccount = currentUser && currentUser.username === username;
     const message = isOwnAccount 
@@ -446,7 +512,6 @@ async function resetPassword(username) {
     }
 }
 
-// Toggle User Role
 async function toggleUserRole(username, currentRole) {
     if (username === 'admin') {
         showAlert('Cannot change admin role!', 'error');
@@ -474,7 +539,6 @@ async function toggleUserRole(username, currentRole) {
     }
 }
 
-// Delete User
 async function deleteUser(username) {
     if (username === 'admin') {
         showAlert('Cannot delete admin user!', 'error');
@@ -498,6 +562,261 @@ async function deleteUser(username) {
     } catch (error) {
         showAlert('❌ Error connecting to server', 'error');
     }
+}
+
+// =============================================
+// REPORT FILTER FUNCTIONS
+// =============================================
+
+async function loadReportEmployees() {
+    try {
+        const response = await fetch(`${API_URL}/api/employees`);
+        const employees = await response.json();
+        
+        const select = document.getElementById('reportEmployeeFilter');
+        select.innerHTML = '<option value="">All Employees</option>';
+        
+        if (employees && employees.length > 0) {
+            let filteredEmployees = employees;
+            if (currentUser && currentUser.role !== 'admin') {
+                filteredEmployees = employees.filter(e => e.name === currentUser.username);
+            }
+            
+            filteredEmployees.forEach(emp => {
+                const option = document.createElement('option');
+                option.value = emp.name;
+                option.textContent = emp.name;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading employees for report:', error);
+    }
+}
+
+async function loadFullReport() {
+    try {
+        const response = await fetch(`${API_URL}/api/break-report`);
+        reportData = await response.json();
+        
+        if (currentUser && currentUser.role !== 'admin') {
+            reportData = reportData.filter(row => row.employee_name === currentUser.username);
+        }
+        
+        filteredReportData = [...reportData];
+        displayReportData(filteredReportData);
+        updateReportStats(filteredReportData);
+    } catch (error) {
+        console.error('Error loading report:', error);
+        document.getElementById('reportBody').innerHTML = '<tr><td colspan="6" class="no-data">Error loading report</td></tr>';
+    }
+}
+
+function displayReportData(data) {
+    const tbody = document.getElementById('reportBody');
+
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="no-data">No breaks found matching the filters</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = '';
+    data.forEach(row => {
+        const tr = document.createElement('tr');
+        const statusBadge = row.status === 'On Break' ?
+            '<span class="badge badge-warning">🔴 On Break</span>' :
+            '<span class="badge badge-success">✅ Completed</span>';
+
+        if (row.status === 'On Break') {
+            tr.style.background = '#fff3cd';
+        }
+
+        tr.innerHTML = `
+            <td><strong>${row.break_date}</strong></td>
+            <td><strong>${row.employee_name}</strong></td>
+            <td>${row.break_out}</td>
+            <td>${row.break_in}</td>
+            <td>${row.duration}</td>
+            <td>${statusBadge}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function updateReportStats(data) {
+    const total = data ? data.length : 0;
+    const completed = data ? data.filter(row => row.status === 'Completed').length : 0;
+    const active = data ? data.filter(row => row.status === 'On Break').length : 0;
+    
+    document.getElementById('reportTotalRecords').textContent = total;
+    document.getElementById('reportCompletedCount').textContent = completed;
+    document.getElementById('reportActiveCount').textContent = active;
+}
+
+function applyReportFilters() {
+    const employeeFilter = document.getElementById('reportEmployeeFilter').value;
+    const dateFrom = document.getElementById('reportDateFrom').value;
+    const dateTo = document.getElementById('reportDateTo').value;
+    const statusFilter = document.getElementById('reportStatusFilter').value;
+    
+    let filtered = [...reportData];
+    
+    if (employeeFilter) {
+        filtered = filtered.filter(row => row.employee_name === employeeFilter);
+    }
+    
+    if (dateFrom) {
+        const fromDate = new Date(dateFrom);
+        filtered = filtered.filter(row => {
+            const rowDate = new Date(row.break_date);
+            return rowDate >= fromDate;
+        });
+    }
+    
+    if (dateTo) {
+        const toDate = new Date(dateTo);
+        toDate.setHours(23, 59, 59);
+        filtered = filtered.filter(row => {
+            const rowDate = new Date(row.break_date);
+            return rowDate <= toDate;
+        });
+    }
+    
+    if (statusFilter) {
+        filtered = filtered.filter(row => row.status === statusFilter);
+    }
+    
+    filteredReportData = filtered;
+    displayReportData(filtered);
+    updateReportStats(filtered);
+    
+    showAlert(`✅ Filter applied: ${filtered.length} records found`, 'success');
+}
+
+function resetReportFilters() {
+    document.getElementById('reportEmployeeFilter').value = '';
+    document.getElementById('reportDateFrom').value = '';
+    document.getElementById('reportDateTo').value = '';
+    document.getElementById('reportStatusFilter').value = '';
+    
+    filteredReportData = [...reportData];
+    displayReportData(filteredReportData);
+    updateReportStats(filteredReportData);
+    
+    showAlert('✅ Filters reset', 'success');
+}
+
+function exportReport() {
+    const data = filteredReportData.length > 0 ? filteredReportData : reportData;
+    
+    if (!data || data.length === 0) {
+        showAlert('No data to export!', 'error');
+        return;
+    }
+
+    let csv = 'Date,Employee,Break,In,Duration,Status\n';
+    data.forEach(row => {
+        csv += `${row.break_date},${row.employee_name},${row.break_out},${row.break_in},${row.duration},${row.status}\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `break-report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+
+    showAlert('✅ Report exported successfully!', 'success');
+}
+
+function exportReportPDF() {
+    const data = filteredReportData.length > 0 ? filteredReportData : reportData;
+    
+    if (!data || data.length === 0) {
+        showAlert('No data to export!', 'error');
+        return;
+    }
+    
+    const printWindow = window.open('', '_blank');
+    const date = new Date().toLocaleDateString();
+    
+    let tableRows = '';
+    data.forEach(row => {
+        const statusColor = row.status === 'On Break' ? '#dc3545' : '#28a745';
+        tableRows += `
+            <tr>
+                <td>${row.break_date}</td>
+                <td>${row.employee_name}</td>
+                <td>${row.break_out}</td>
+                <td>${row.break_in}</td>
+                <td>${row.duration}</td>
+                <td style="color:${statusColor}; font-weight:bold;">${row.status}</td>
+            </tr>
+        `;
+    });
+    
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Break Report - ${date}</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; }
+                h1 { color: #1a73e8; border-bottom: 2px solid #1a73e8; padding-bottom: 10px; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th { background: #1a73e8; color: white; padding: 10px; text-align: left; }
+                td { padding: 8px 10px; border-bottom: 1px solid #ddd; }
+                tr:nth-child(even) { background: #f8f9fa; }
+                .summary { margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 5px; }
+                .footer { margin-top: 30px; text-align: center; color: #888; font-size: 12px; border-top: 1px solid #ddd; padding-top: 15px; }
+                @media print {
+                    body { padding: 10px; }
+                    .no-print { display: none; }
+                }
+            </style>
+        </head>
+        <body>
+            <h1>📊 Break Report</h1>
+            <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
+            <div class="summary">
+                <strong>Summary:</strong> 
+                Total Records: ${data.length} | 
+                Completed: ${data.filter(r => r.status === 'Completed').length} | 
+                On Break: ${data.filter(r => r.status === 'On Break').length}
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Employee</th>
+                        <th>Break</th>
+                        <th>In</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tableRows}
+                </tbody>
+            </table>
+            <div class="footer">
+                &copy; ${new Date().getFullYear()} Break Tracker Pro - All Rights Reserved
+            </div>
+            <div class="no-print" style="margin-top:20px; text-align:center;">
+                <button onclick="window.print()" style="padding:10px 30px; background:#1a73e8; color:white; border:none; border-radius:5px; cursor:pointer; font-size:14px;">
+                    🖨️ Print / Save as PDF
+                </button>
+                <button onclick="window.close()" style="padding:10px 30px; background:#6c757d; color:white; border:none; border-radius:5px; cursor:pointer; font-size:14px; margin-left:10px;">
+                    Close
+                </button>
+            </div>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    
+    showAlert('✅ PDF report ready for printing!', 'success');
 }
 
 // ===== SETTINGS FUNCTIONS =====
@@ -688,40 +1007,6 @@ async function loadBreaks() {
     }
 }
 
-async function loadFullReport() {
-    try {
-        const response = await fetch(`${API_URL}/api/break-report`);
-        const data = await response.json();
-
-        const tbody = document.getElementById('reportBody');
-
-        if (!data || data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="no-data">No breaks recorded yet</td></tr>';
-            return;
-        }
-
-        tbody.innerHTML = '';
-        data.forEach(row => {
-            const tr = document.createElement('tr');
-            const statusBadge = row.status === 'On Break' ?
-                '<span class="badge badge-warning">🔴 On Break</span>' :
-                '<span class="badge badge-success">✅ Completed</span>';
-
-            tr.innerHTML = `
-                <td>${row.break_date}</td>
-                <td><strong>${row.employee_name}</strong></td>
-                <td>${row.break_out}</td>
-                <td>${row.break_in}</td>
-                <td>${row.duration}</td>
-                <td>${statusBadge}</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    } catch (error) {
-        console.error('Error loading report:', error);
-    }
-}
-
 async function updateStats(employeeName) {
     try {
         const response = await fetch(`${API_URL}/api/today/${encodeURIComponent(employeeName)}`);
@@ -833,36 +1118,6 @@ async function deleteBreak(id) {
     } catch (error) {
         showAlert('❌ Error connecting to server', 'error');
     }
-}
-
-// ===== EXPORT REPORT =====
-function exportReport() {
-    const table = document.querySelector('#reportBody');
-    const rows = table.querySelectorAll('tr');
-
-    if (rows.length === 0 || rows[0].classList.contains('no-data')) {
-        showAlert('No data to export!', 'error');
-        return;
-    }
-
-    let csv = 'Date,Employee,Break,In,Duration,Status\n';
-    rows.forEach(row => {
-        const cols = row.querySelectorAll('td');
-        if (cols.length > 0) {
-            const data = Array.from(cols).map(c => c.textContent.trim());
-            csv += data.join(',') + '\n';
-        }
-    });
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `break-report-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-
-    showAlert('✅ Report exported successfully!', 'success');
 }
 
 // ===== UTILITIES =====

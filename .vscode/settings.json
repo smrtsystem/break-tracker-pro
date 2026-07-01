@@ -6,8 +6,8 @@
             "server": "localhost",
             "port": 5432,
             "driver": "PostgreSQL",
-            "name": "PostgreSQL 18",
-            "database": "Data Pool",
+            "name": "PostgreSQL18",
+            "database": "break_tracker_db",
             "username": "postgres",
             "password": "535680"
         }
