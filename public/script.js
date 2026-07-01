@@ -1,4 +1,11 @@
 // =============================================
+// API URL - Auto-detect local vs production
+// =============================================
+const API_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:3000' 
+    : '';
+
+// =============================================
 // AUTHENTICATION & USER MANAGEMENT
 // =============================================
 
@@ -127,7 +134,7 @@ document.addEventListener('keydown', function(e) {
 
 async function loadAllEmployees() {
     try {
-        const response = await fetch('http://localhost:3000/api/employees/bulk', {
+        const response = await fetch(`${API_URL}/api/employees/bulk`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ employees: EMPLOYEES })
@@ -147,7 +154,7 @@ async function loadAllEmployees() {
 
 async function loadEmployees() {
     try {
-        const response = await fetch('http://localhost:3000/api/employees');
+        const response = await fetch(`${API_URL}/api/employees`);
         const employees = await response.json();
 
         const select = document.getElementById('employeeSelect');
@@ -190,7 +197,7 @@ async function loadEmployees() {
 
 async function loadEmployeeList() {
     try {
-        const response = await fetch('http://localhost:3000/api/employees');
+        const response = await fetch(`${API_URL}/api/employees`);
         const employees = await response.json();
 
         const container = document.getElementById('employeeListContainer');
@@ -233,7 +240,7 @@ async function addEmployee() {
     }
 
     try {
-        const response = await fetch('http://localhost:3000/api/employees/bulk', {
+        const response = await fetch(`${API_URL}/api/employees/bulk`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ employees: [name] })
@@ -256,7 +263,7 @@ async function deleteEmployee(name) {
     if (!confirm(`Are you sure you want to delete "${name}"? This will also delete all their break records.`)) return;
 
     try {
-        const response = await fetch(`http://localhost:3000/api/employees/${encodeURIComponent(name)}`, {
+        const response = await fetch(`${API_URL}/api/employees/${encodeURIComponent(name)}`, {
             method: 'DELETE'
         });
 
@@ -278,7 +285,7 @@ async function deleteEmployee(name) {
 
 async function loadUsers() {
     try {
-        const response = await fetch('http://localhost:3000/api/users');
+        const response = await fetch(`${API_URL}/api/users`);
         const users = await response.json();
 
         const container = document.getElementById('userListContainer');
@@ -344,7 +351,7 @@ async function addUser() {
     }
 
     try {
-        const response = await fetch('http://localhost:3000/api/users', {
+        const response = await fetch(`${API_URL}/api/users`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password, role })
@@ -373,7 +380,7 @@ async function editUsername(oldUsername) {
     if (!confirm(`Are you sure you want to change username from "${oldUsername}" to "${newUsername}"?`)) return;
     
     try {
-        const response = await fetch(`http://localhost:3000/api/users/${encodeURIComponent(oldUsername)}/username`, {
+        const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(oldUsername)}/username`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ newUsername })
@@ -417,7 +424,7 @@ async function resetPassword(username) {
     }
     
     try {
-        const response = await fetch(`http://localhost:3000/api/users/${encodeURIComponent(username)}/password`, {
+        const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(username)}/password`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -450,7 +457,7 @@ async function toggleUserRole(username, currentRole) {
     if (!confirm(`Change "${username}" role from "${currentRole}" to "${newRole}"?`)) return;
 
     try {
-        const response = await fetch(`http://localhost:3000/api/users/${encodeURIComponent(username)}`, {
+        const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(username)}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ role: newRole })
@@ -477,7 +484,7 @@ async function deleteUser(username) {
     if (!confirm(`Are you sure you want to delete user "${username}"?`)) return;
 
     try {
-        const response = await fetch(`http://localhost:3000/api/users/${encodeURIComponent(username)}`, {
+        const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(username)}`, {
             method: 'DELETE'
         });
 
@@ -564,7 +571,7 @@ async function onEmployeeChange() {
 
 async function checkActiveBreak(employeeName) {
     try {
-        const response = await fetch(`http://localhost:3000/api/active-break/${encodeURIComponent(employeeName)}`);
+        const response = await fetch(`${API_URL}/api/active-break/${encodeURIComponent(employeeName)}`);
         const data = await response.json();
 
         const statusDisplay = document.getElementById('statusDisplay');
@@ -593,7 +600,7 @@ async function checkActiveBreak(employeeName) {
 
 async function loadActiveBreaks() {
     try {
-        const response = await fetch('http://localhost:3000/api/active-breaks');
+        const response = await fetch(`${API_URL}/api/active-breaks`);
         const data = await response.json();
 
         const container = document.getElementById('activeBreaksList');
@@ -635,7 +642,7 @@ async function loadBreaks() {
     }
 
     try {
-        const response = await fetch(`http://localhost:3000/api/breaks/${encodeURIComponent(employeeName)}`);
+        const response = await fetch(`${API_URL}/api/breaks/${encodeURIComponent(employeeName)}`);
         const data = await response.json();
 
         const tbody = document.getElementById('breakBody');
@@ -683,7 +690,7 @@ async function loadBreaks() {
 
 async function loadFullReport() {
     try {
-        const response = await fetch('http://localhost:3000/api/break-report');
+        const response = await fetch(`${API_URL}/api/break-report`);
         const data = await response.json();
 
         const tbody = document.getElementById('reportBody');
@@ -717,7 +724,7 @@ async function loadFullReport() {
 
 async function updateStats(employeeName) {
     try {
-        const response = await fetch(`http://localhost:3000/api/today/${encodeURIComponent(employeeName)}`);
+        const response = await fetch(`${API_URL}/api/today/${encodeURIComponent(employeeName)}`);
         const stats = await response.json();
 
         const statsDiv = document.getElementById('stats');
@@ -759,7 +766,7 @@ async function breakOut() {
     const breakDate = now.toISOString().split('T')[0];
 
     try {
-        const response = await fetch('http://localhost:3000/api/break-out', {
+        const response = await fetch(`${API_URL}/api/break-out`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ employeeName, breakDate, breakOut })
@@ -790,7 +797,7 @@ async function breakIn() {
     const breakDate = now.toISOString().split('T')[0];
 
     try {
-        const response = await fetch('http://localhost:3000/api/break-in', {
+        const response = await fetch(`${API_URL}/api/break-in`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ employeeName, breakDate, breakIn })
@@ -813,7 +820,7 @@ async function deleteBreak(id) {
     if (!confirm('Are you sure you want to delete this break?')) return;
 
     try {
-        const response = await fetch(`http://localhost:3000/api/breaks/${id}`, {
+        const response = await fetch(`${API_URL}/api/breaks/${id}`, {
             method: 'DELETE'
         });
 
