@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Break Tracker Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ===== HEADER ===== -->
+    <header class="header">
+        <div class="header-content">
+            <div class="header-left">
+                <div class="header-logo">
+                    <i class="fas fa-coffee"></i>
+                </div>
+                <div class="header-title">
+                    <h1>Break Tracker Pro</h1>
+                    <p>Employee Break Management System</p>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="header-time">
+                    <i class="far fa-clock"></i>
+                    <span id="liveTime">--:--:--</span>
+                </div>
+                <div class="header-badge" id="activeCountBadge">
+                    <i class="fas fa-users"></i> 0 Active
+                </div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span id="userDisplay" style="background:rgba(255,255,255,0.15); padding:4px 14px; border-radius:20px; font-size:12px; font-weight:500;">
+                        <i class="fas fa-user"></i> <span id="userName">Loading...</span>
+                    </span>
+                    <button class="btn btn-secondary btn-sm" onclick="logout()" style="background:rgba(255,255,255,0.15); color:white; border:1px solid rgba(255,255,255,0.2);">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ===== MAIN CONTENT ===== -->
+    <div class="container">
+        <!-- Alert -->
+        <div id="alert" class="alert"></div>
+
+        <!-- Navigation Tabs -->
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="switchTab('dashboard')">
+                <i class="fas fa-chart-pie"></i> Dashboard
+            </button>
+            <button class="nav-tab admin-only" onclick="switchTab('config')" style="display:none;">
+                <i class="fas fa-cog"></i> Configuration
+            </button>
+            <button class="nav-tab admin-only" onclick="switchTab('users')" style="display:none;">
+                <i class="fas fa-users-cog"></i> Users
+            </button>
+            <button class="nav-tab admin-only" onclick="switchTab('settings')" style="display:none;">
+                <i class="fas fa-sliders-h"></i> Settings
+            </button>
+        </div>
+
+        <!-- ===== TAB 1: DASHBOARD ===== -->
+        <div id="tab-dashboard" class="tab-content active">
+            <div class="card">
+                <div class="card-title">
+                    <i class="fas fa-user-circle"></i> Employee Selection
+                </div>
+                <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                    <div style="flex: 2; min-width: 200px;">
+                        <select id="employeeSelect" onchange="onEmployeeChange()" style="width:100%; padding:10px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
+                            <option value="">Loading employees...</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="refreshData()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                    <button class="btn btn-success admin-only" onclick="loadAllEmployees()" style="display:none;">
+                        <i class="fas fa-users"></i> Load All
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <i class="fas fa-bolt"></i> Quick Actions
+                </div>
+                <div class="form-row">
+                    <div class="field" style="flex:1.2; min-width:150px;">
+                        <label><i class="fas fa-user"></i> Selected Employee</label>
+                        <input type="text" id="selectedEmployeeDisplay" readonly style="background:#f8f9fa; font-weight:600; border:2px solid #e9ecef; border-radius:10px; padding:9px 14px; width:100%; font-size:13px;">
+                    </div>
+                    <div class="field" style="flex:0.8; min-width:100px;">
+                        <button class="btn btn-warning btn-lg" onclick="breakOut()" id="breakOutBtn" style="width:100%;">
+                            <i class="fas fa-sign-out-alt"></i> Break
+                        </button>
+                    </div>
+                    <div class="field" style="flex:0.8; min-width:100px;">
+                        <button class="btn btn-success btn-lg" onclick="breakIn()" id="breakInBtn" style="width:100%;">
+                            <i class="fas fa-sign-in-alt"></i> In
+                        </button>
+                    </div>
+                    <div class="field" style="flex:1; min-width:140px;">
+                        <div id="statusDisplay" style="padding:10px 16px; background:#e9ecef; border-radius:10px; text-align:center; font-weight:600; min-width:140px; font-size:13px;">
+                            Status: Idle
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="border-left: 4px solid #ff6b6b;">
+                <div class="card-title" style="color:#dc3545;">
+                    <i class="fas fa-circle" style="color:#dc3545; font-size:10px;"></i> Currently On Break
+                    <span style="font-size:11px; font-weight:400; color:#888; margin-left:8px;" id="activeCount">(0)</span>
+                </div>
+                <div id="activeBreaksList" class="active-breaks-list">
+                    <span style="color: #adb5bd; font-size:13px;">✅ No one is on break right now</span>
+                </div>
+            </div>
+
+            <div id="stats" class="stats" style="margin-bottom:20px;"></div>
+
+            <div class="section-title">
+                <h2><i class="fas fa-history"></i> Break History - <span id="employeeNameTitle" style="color:#1a73e8;">Select an employee</span></h2>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>DATE</th>
+                            <th>EMPLOYEE</th>
+                            <th>BREAK</th>
+                            <th>IN</th>
+                            <th>DURATION</th>
+                            <th>USED</th>
+                            <th>REMAINING</th>
+                            <th>TOTAL</th>
+                            <th>STATUS</th>
+                            <th>ACTION</th>
+                        </tr>
+                    </thead>
+                    <tbody id="breakBody">
+                        <tr><td colspan="10" class="no-data">Please select an employee</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- ===== REPORT BUTTON - Visible to ALL Users ===== -->
+            <div class="report-button-row">
+                <button class="btn btn-primary" onclick="openReportModal()" style="padding: 14px 40px; font-size: 15px; border-radius: 50px; box-shadow: 0 4px 20px rgba(26,115,232,0.3);">
+                    <i class="fas fa-file-alt"></i> View Complete Report
+                </button>
+                <div class="current-break-info" id="currentBreakInfo">
+                    <i class="fas fa-users" style="color:#dc3545;"></i>
+                    Currently on Break: 
+                    <span class="count" id="currentBreakCount">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB 2: CONFIGURATION (Admin Only) ===== -->
+        <div id="tab-config" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <i class="fas fa-user-plus"></i> Add New Employee
+                </div>
+                <div class="form-row">
+                    <div class="field" style="flex:2; min-width:200px;">
+                        <label>Employee Name</label>
+                        <input type="text" id="newEmployeeName" placeholder="Enter employee name..." style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif;">
+                    </div>
+                    <div class="field" style="flex:1; min-width:100px;">
+                        <button class="btn btn-success" onclick="addEmployee()" style="width:100%;">
+                            <i class="fas fa-plus"></i> Add Employee
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <i class="fas fa-users"></i> Employee List
+                    <span style="font-size:12px; font-weight:400; color:#888; margin-left:8px;" id="employeeCount">(0 employees)</span>
+                </div>
+                <div id="employeeListContainer" class="employee-list">
+                    <div class="no-data" style="grid-column: 1/-1;">Loading employees...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB 3: USERS (Admin Only) ===== -->
+        <div id="tab-users" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <i class="fas fa-user-plus"></i> Add New User
+                </div>
+                <div class="form-row">
+                    <div class="field" style="flex:1.5; min-width:150px;">
+                        <label>Username (Must match employee name)</label>
+                        <input type="text" id="newUsername" placeholder="Enter username..." style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif;">
+                    </div>
+                    <div class="field" style="flex:1; min-width:120px;">
+                        <label>Password</label>
+                        <input type="text" id="newUserPassword" value="user123" style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif;">
+                    </div>
+                    <div class="field" style="flex:0.8; min-width:100px;">
+                        <label>Role</label>
+                        <select id="newUserRole" style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
+                            <option value="user">User</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="field" style="flex:0.8; min-width:100px;">
+                        <button class="btn btn-success" onclick="addUser()" style="width:100%; margin-top:20px;">
+                            <i class="fas fa-plus"></i> Add User
+                        </button>
+                    </div>
+                </div>
+                <div style="margin-top:10px; font-size:12px; color:#888;">
+                    <i class="fas fa-info-circle"></i> Username must match an existing employee name
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <i class="fas fa-users-cog"></i> User Management
+                    <span style="font-size:12px; font-weight:400; color:#888; margin-left:8px;" id="userCount">(0 users)</span>
+                </div>
+                <div style="margin-bottom:12px; padding:10px; background:#e8f5e9; border-radius:8px; font-size:12px; color:#2e7d32; border:1px solid #c8e6c9;">
+                    <i class="fas fa-info-circle"></i> 
+                    <strong>Actions:</strong> 
+                    <span style="margin:0 8px;">✏️ Edit Username</span>
+                    <span style="margin:0 8px;">🔑 Reset Password</span>
+                    <span style="margin:0 8px;">🔄 Toggle Role</span>
+                    <span style="margin:0 8px;">🗑️ Delete User</span>
+                </div>
+                <div id="userListContainer" class="employee-list">
+                    <div class="no-data" style="grid-column: 1/-1;">Loading users...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB 4: SETTINGS (Admin Only) ===== -->
+        <div id="tab-settings" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <i class="fas fa-sliders-h"></i> System Settings
+                </div>
+                <div class="settings-group">
+                    <div class="settings-item">
+                        <label><i class="fas fa-clock"></i> Total Break Allowance (Daily)</label>
+                        <input type="text" id="breakAllowance" value="2:30" placeholder="HH:MM">
+                        <button class="btn btn-primary btn-sm" onclick="updateSetting('breakAllowance')" style="margin-top:8px;">
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                    </div>
+                    <div class="settings-item">
+                        <label><i class="fas fa-history"></i> Break History Limit</label>
+                        <input type="number" id="historyLimit" value="50" placeholder="Number of records">
+                        <button class="btn btn-primary btn-sm" onclick="updateSetting('historyLimit')" style="margin-top:8px;">
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                    </div>
+                    <div class="settings-item">
+                        <label><i class="fas fa-sync-alt"></i> Auto-Refresh Interval</label>
+                        <input type="number" id="refreshInterval" value="30" placeholder="Seconds">
+                        <button class="btn btn-primary btn-sm" onclick="updateSetting('refreshInterval')" style="margin-top:8px;">
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                    </div>
+                    <div class="settings-item">
+                        <label><i class="fas fa-trash"></i> Danger Zone</label>
+                        <button class="btn btn-danger" onclick="clearAllData()" style="width:100%;">
+                            <i class="fas fa-exclamation-triangle"></i> Clear All Data
+                        </button>
+                        <button class="btn btn-secondary" onclick="resetToDefault()" style="width:100%; margin-top:8px;">
+                            <i class="fas fa-undo"></i> Reset to Default
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== REPORT MODAL WITH FILTERS - Visible to ALL Users ===== -->
+    <div class="modal-overlay" id="reportModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2><i class="fas fa-file-alt"></i> Complete Break Report</h2>
+                <button class="modal-close" onclick="closeReportModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- Filter Section -->
+                <div style="margin-bottom: 15px; padding: 15px; background: #f8f9fa; border-radius: 10px; border: 1px solid #e9ecef;">
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
+                        <div style="flex: 1; min-width: 150px;">
+                            <label style="font-weight: 600; font-size: 12px; color: #555; display: block; margin-bottom: 4px;">
+                                <i class="fas fa-user"></i> Employee
+                            </label>
+                            <select id="reportEmployeeFilter" style="width:100%; padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; background: white;">
+                                <option value="">All Employees</option>
+                            </select>
+                        </div>
+                        <div style="flex: 1; min-width: 130px;">
+                            <label style="font-weight: 600; font-size: 12px; color: #555; display: block; margin-bottom: 4px;">
+                                <i class="fas fa-calendar-alt"></i> From Date
+                            </label>
+                            <input type="date" id="reportDateFrom" style="width:100%; padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif;">
+                        </div>
+                        <div style="flex: 1; min-width: 130px;">
+                            <label style="font-weight: 600; font-size: 12px; color: #555; display: block; margin-bottom: 4px;">
+                                <i class="fas fa-calendar-alt"></i> To Date
+                            </label>
+                            <input type="date" id="reportDateTo" style="width:100%; padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif;">
+                        </div>
+                        <div style="flex: 1; min-width: 120px;">
+                            <label style="font-weight: 600; font-size: 12px; color: #555; display: block; margin-bottom: 4px;">
+                                <i class="fas fa-filter"></i> Status
+                            </label>
+                            <select id="reportStatusFilter" style="width:100%; padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; background: white;">
+                                <option value="">All Status</option>
+                                <option value="Completed">✅ Completed</option>
+                                <option value="On Break">🔴 On Break</option>
+                            </select>
+                        </div>
+                        <div style="flex: 0.5; min-width: 100px;">
+                            <button class="btn btn-primary" onclick="applyReportFilters()" style="width:100%;">
+                                <i class="fas fa-search"></i> Apply
+                            </button>
+                        </div>
+                        <div style="flex: 0.5; min-width: 80px;">
+                            <button class="btn btn-secondary" onclick="resetReportFilters()" style="width:100%;">
+                                <i class="fas fa-undo"></i> Reset
+                            </button>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; display: flex; gap: 15px; flex-wrap: wrap; font-size: 12px; color: #666;">
+                        <span><i class="fas fa-clock"></i> <strong id="reportTotalRecords">0</strong> records found</span>
+                        <span><i class="fas fa-check-circle" style="color:#28a745;"></i> Completed: <strong id="reportCompletedCount">0</strong></span>
+                        <span><i class="fas fa-circle" style="color:#dc3545;"></i> On Break: <strong id="reportActiveCount">0</strong></span>
+                    </div>
+                </div>
+
+                <!-- Report Table -->
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>DATE</th>
+                                <th>EMPLOYEE</th>
+                                <th>BREAK</th>
+                                <th>IN</th>
+                                <th>DURATION</th>
+                                <th>STATUS</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reportBody">
+                            <tr><td colspan="6" class="no-data">Loading report...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Export Buttons -->
+                <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
+                    <button class="btn btn-success" onclick="exportReport()">
+                        <i class="fas fa-file-csv"></i> Export CSV
+                    </button>
+                    <button class="btn btn-primary" onclick="exportReportPDF()">
+                        <i class="fas fa-file-pdf"></i> Export PDF
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== FOOTER ===== -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4><i class="fas fa-coffee" style="color:#ffc107;"></i> Break Tracker Pro</h4>
+                <p>Professional employee break management system built with ❤️ for modern workplaces.</p>
+            </div>
+            <div class="footer-section">
+                <h4>Quick Links</h4>
+                <p>
+                    <a href="#" style="color:rgba(255,255,255,0.6); text-decoration:none; display:block; margin:3px 0; font-size:13px;">Dashboard</a>
+                    <a href="#" style="color:rgba(255,255,255,0.6); text-decoration:none; display:block; margin:3px 0; font-size:13px;">Reports</a>
+                    <a href="#" style="color:rgba(255,255,255,0.6); text-decoration:none; display:block; margin:3px 0; font-size:13px;">Settings</a>
+                </p>
+            </div>
+            <div class="footer-section">
+                <h4>Connect With Us</h4>
+                <p style="font-size:13px;">Follow us for updates and support.</p>
+                <div class="social-links">
+                    <a href="#"><i class="fab fa-github"></i></a>
+                    <a href="#"><i class="fab fa-linkedin"></i></a>
+                    <a href="#"><i class="fab fa-twitter"></i></a>
+                    <a href="#"><i class="fab fa-youtube"></i></a>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            &copy; 2026 Break Tracker Pro. All rights reserved. | Made with <i class="fas fa-heart" style="color:#ff6b6b;"></i> by Your Team
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
