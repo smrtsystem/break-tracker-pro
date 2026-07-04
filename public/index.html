@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Break Tracker Pro</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -25,11 +25,6 @@
                 <div class="header-time">
                     <i class="far fa-clock"></i>
                     <span id="liveTime">--:--:--</span>
-                </div>
-                <!-- ===== ACTIVE STATUS BUTTON - GREEN ===== -->
-                <div class="header-status" id="headerStatus">
-                    <span class="status-dot active"></span>
-                    <span class="status-text">System Active</span>
                 </div>
                 <div class="header-badge" id="activeCountBadge">
                     <i class="fas fa-users"></i> <span id="headerActiveCount">0</span> Active
@@ -68,263 +63,258 @@
             </button>
         </div>
 
-        <!-- ===== TAB 1: DASHBOARD - LARGER ===== -->
+        <!-- ===== TAB 1: DASHBOARD ===== -->
         <div id="tab-dashboard" class="tab-content active">
-            <!-- Employee Selection - Larger -->
-            <div class="card card-large">
-                <div class="card-title card-title-large">
+            <div class="card">
+                <div class="card-title">
                     <i class="fas fa-user-circle"></i> Employee Selection
                 </div>
-                <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: center;">
-                    <div style="flex: 3; min-width: 250px;">
-                        <select id="employeeSelect" onchange="onEmployeeChange()" style="width:100%; padding:14px 18px; border:2px solid #e9ecef; border-radius:12px; font-size:16px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
+                <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                    <div style="flex: 2; min-width: 200px;">
+                        <select id="employeeSelect" onchange="onEmployeeChange()" style="width:100%; padding:10px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
                             <option value="">Select an employee...</option>
                         </select>
                     </div>
-                    <button class="btn btn-primary btn-large" onclick="refreshData()">
+                    <button class="btn btn-primary" onclick="refreshData()">
                         <i class="fas fa-sync-alt"></i> Refresh
                     </button>
                 </div>
             </div>
 
-            <!-- Quick Actions - Larger -->
-            <div class="card card-large">
-                <div class="card-title card-title-large">
+            <div class="card">
+                <div class="card-title">
                     <i class="fas fa-bolt"></i> Quick Actions
                 </div>
-                <div class="form-row form-row-large">
-                    <div class="field" style="flex:1.5; min-width:200px;">
-                        <label style="font-size:14px;"><i class="fas fa-user"></i> Selected Employee</label>
-                        <input type="text" id="selectedEmployeeDisplay" readonly style="background:#f8f9fa; font-weight:600; border:2px solid #e9ecef; border-radius:12px; padding:14px 18px; width:100%; font-size:16px;">
+                <div class="form-row">
+                    <div class="field" style="flex:1.2; min-width:150px;">
+                        <label><i class="fas fa-user"></i> Selected Employee</label>
+                        <input type="text" id="selectedEmployeeDisplay" readonly style="background:#f8f9fa; font-weight:600; border:2px solid #e9ecef; border-radius:10px; padding:9px 14px; width:100%; font-size:13px;">
                     </div>
-                    <div class="field" style="flex:1; min-width:140px;">
-                        <button class="btn btn-warning btn-large" onclick="breakOut()" id="breakOutBtn" style="width:100%; padding:14px 24px; font-size:16px;">
+                    <div class="field" style="flex:0.8; min-width:100px;">
+                        <button class="btn btn-warning" onclick="breakOut()" id="breakOutBtn" style="width:100%;">
                             <i class="fas fa-sign-out-alt"></i> Break
                         </button>
                     </div>
-                    <div class="field" style="flex:1; min-width:140px;">
-                        <button class="btn btn-success btn-large" onclick="breakIn()" id="breakInBtn" style="width:100%; padding:14px 24px; font-size:16px;">
+                    <div class="field" style="flex:0.8; min-width:100px;">
+                        <button class="btn btn-success" onclick="breakIn()" id="breakInBtn" style="width:100%;">
                             <i class="fas fa-sign-in-alt"></i> In
                         </button>
                     </div>
-                    <div class="field" style="flex:1.2; min-width:180px;">
-                        <div id="statusDisplay" style="padding:14px 20px; background:#e9ecef; border-radius:12px; text-align:center; font-weight:700; min-width:160px; font-size:16px;">
+                    <div class="field" style="flex:1; min-width:140px;">
+                        <div id="statusDisplay" style="padding:10px 16px; background:#e9ecef; border-radius:10px; text-align:center; font-weight:600; min-width:140px; font-size:13px;">
                             Status: Idle
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Currently On Break - Larger -->
-            <div class="card card-large" style="border-left: 6px solid #ff6b6b;">
-                <div class="card-title card-title-large" style="color:#dc3545;">
-                    <i class="fas fa-circle" style="color:#dc3545; font-size:14px;"></i> Currently On Break
-                    <span style="font-size:14px; font-weight:400; color:#888; margin-left:10px;" id="activeCount">(0)</span>
+            <div class="card" style="border-left: 4px solid #ff6b6b;">
+                <div class="card-title" style="color:#dc3545;">
+                    <i class="fas fa-circle" style="color:#dc3545; font-size:10px;"></i> Currently On Break
+                    <span style="font-size:11px; font-weight:400; color:#888; margin-left:8px;" id="activeCount">(0)</span>
                 </div>
-                <div id="activeBreaksList" class="active-breaks-list" style="min-height:60px;">
-                    <span style="color: #adb5bd; font-size:16px;">✅ No one is on break right now</span>
+                <div id="activeBreaksList" class="active-breaks-list">
+                    <span style="color: #adb5bd; font-size:13px;">✅ No one is on break right now</span>
                 </div>
             </div>
 
-            <!-- Stats - Larger -->
-            <div id="stats" class="stats stats-large" style="margin-bottom:25px;"></div>
+            <div id="stats" class="stats" style="margin-bottom:20px;"></div>
 
-            <!-- Break History - Larger -->
-            <div class="section-title section-title-large">
-                <h2 style="font-size:22px;"><i class="fas fa-history"></i> Break History - <span id="employeeNameTitle" style="color:#1a73e8;">Select an employee</span></h2>
+            <div class="section-title">
+                <h2><i class="fas fa-history"></i> Break History - <span id="employeeNameTitle" style="color:#1a73e8;">Select an employee</span></h2>
             </div>
-            <div class="table-container table-container-large">
-                <table style="font-size:14px;">
+            <div class="table-container">
+                <table>
                     <thead>
                         <tr>
-                            <th style="padding:14px 18px; font-size:13px;">DATE</th>
-                            <th style="padding:14px 18px; font-size:13px;">EMPLOYEE</th>
-                            <th style="padding:14px 18px; font-size:13px;">DEPARTMENT</th>
-                            <th style="padding:14px 18px; font-size:13px;">TYPE</th>
-                            <th style="padding:14px 18px; font-size:13px;">BREAK</th>
-                            <th style="padding:14px 18px; font-size:13px;">IN</th>
-                            <th style="padding:14px 18px; font-size:13px;">DURATION</th>
-                            <th style="padding:14px 18px; font-size:13px;">STATUS</th>
-                            <th style="padding:14px 18px; font-size:13px;">ACTION</th>
+                            <th>DATE</th>
+                            <th>EMPLOYEE</th>
+                            <th>DEPARTMENT</th>
+                            <th>TYPE</th>
+                            <th>BREAK</th>
+                            <th>IN</th>
+                            <th>DURATION</th>
+                            <th>STATUS</th>
+                            <th>ACTION</th>
                         </tr>
                     </thead>
                     <tbody id="breakBody">
-                        <tr><td colspan="9" class="no-data" style="padding:40px; font-size:15px;">Please select an employee</td></tr>
+                        <tr><td colspan="9" class="no-data">Please select an employee</td></tr>
                     </tbody>
                 </table>
             </div>
 
-            <!-- Report Button - Larger -->
-            <div class="report-button-row report-button-row-large">
-                <button class="btn btn-primary btn-large" onclick="openReportModal()" style="padding:16px 50px; font-size:18px; border-radius:50px; box-shadow:0 4px 25px rgba(26,115,232,0.4);">
+            <!-- ===== REPORT BUTTON ===== -->
+            <div class="report-button-row">
+                <button class="btn btn-primary" onclick="openReportModal()" style="padding: 12px 35px; font-size: 14px; border-radius: 50px; box-shadow: 0 4px 20px rgba(26,115,232,0.3);">
                     <i class="fas fa-file-alt"></i> View Complete Report
                 </button>
-                <div class="current-break-info current-break-info-large" style="padding:12px 28px; font-size:16px;">
+                <div class="current-break-info" id="currentBreakInfo">
                     <i class="fas fa-users" style="color:#dc3545;"></i>
                     Currently on Break: 
-                    <span class="count" id="currentBreakCount" style="font-size:16px;">0</span>
+                    <span class="count" id="currentBreakCount">0</span>
                 </div>
             </div>
         </div>
 
         <!-- ===== TAB 2: EMPLOYEES ===== -->
         <div id="tab-config" class="tab-content">
-            <div class="card card-large">
-                <div class="card-title card-title-large">
+            <div class="card">
+                <div class="card-title">
                     <i class="fas fa-building"></i> Departments
                 </div>
-                <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px;">
-                    <button class="btn btn-primary btn-sm dept-tab active" data-dept="all" onclick="filterDepartment('all')" style="padding:10px 24px; font-size:14px;">
+                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:15px;">
+                    <button class="btn btn-primary btn-sm dept-tab active" data-dept="all" onclick="filterDepartment('all')">
                         <i class="fas fa-users"></i> All Employees
                     </button>
-                    <button class="btn btn-secondary btn-sm dept-tab" data-dept="Betrealated" onclick="filterDepartment('Betrealated')" style="padding:10px 24px; font-size:14px;">
+                    <button class="btn btn-secondary btn-sm dept-tab" data-dept="Betrealated" onclick="filterDepartment('Betrealated')">
                         <i class="fas fa-building"></i> Betrealated
                     </button>
-                    <button class="btn btn-secondary btn-sm dept-tab" data-dept="Banking" onclick="filterDepartment('Banking')" style="padding:10px 24px; font-size:14px;">
+                    <button class="btn btn-secondary btn-sm dept-tab" data-dept="Banking" onclick="filterDepartment('Banking')">
                         <i class="fas fa-building"></i> Banking
                     </button>
-                    <button class="btn btn-secondary btn-sm dept-tab" data-dept="CS" onclick="filterDepartment('CS')" style="padding:10px 24px; font-size:14px;">
+                    <button class="btn btn-secondary btn-sm dept-tab" data-dept="CS" onclick="filterDepartment('CS')">
                         <i class="fas fa-building"></i> CS
                     </button>
-                    <button class="btn btn-secondary btn-sm dept-tab" data-dept="Checking" onclick="filterDepartment('Checking')" style="padding:10px 24px; font-size:14px;">
+                    <button class="btn btn-secondary btn-sm dept-tab" data-dept="Checking" onclick="filterDepartment('Checking')">
                         <i class="fas fa-building"></i> Checking
                     </button>
                 </div>
                 
-                <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px;">
-                    <button class="btn btn-success" onclick="showAddEmployeeForm()" style="padding:12px 28px; font-size:15px;">
+                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:15px;">
+                    <button class="btn btn-success btn-sm" onclick="showAddEmployeeForm()">
                         <i class="fas fa-user-plus"></i> Add Employee
                     </button>
                 </div>
 
                 <!-- Add Employee Form -->
-                <div id="addEmployeeForm" style="display:none; background:#f8f9fa; padding:20px; border-radius:12px; margin-bottom:18px; border:2px dashed #1a73e8;">
-                    <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end;">
-                        <div class="field" style="flex:1.2; min-width:180px;">
-                            <label style="font-size:14px;">Employee Name</label>
-                            <input type="text" id="newEmployeeName" placeholder="Enter employee name..." style="width:100%; padding:12px 18px; border:2px solid #e9ecef; border-radius:12px; font-size:15px; font-family: 'Inter', sans-serif;">
+                <div id="addEmployeeForm" style="display:none; background:#f8f9fa; padding:15px; border-radius:10px; margin-bottom:15px; border:2px dashed #1a73e8;">
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
+                        <div class="field" style="flex:1.2; min-width:150px;">
+                            <label>Employee Name</label>
+                            <input type="text" id="newEmployeeName" placeholder="Enter employee name..." style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif;">
                         </div>
-                        <div class="field" style="flex:0.8; min-width:150px;">
-                            <label style="font-size:14px;">Department</label>
-                            <select id="newEmployeeDepartment" style="width:100%; padding:12px 18px; border:2px solid #e9ecef; border-radius:12px; font-size:15px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
+                        <div class="field" style="flex:0.8; min-width:130px;">
+                            <label>Department</label>
+                            <select id="newEmployeeDepartment" style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
                                 <option value="Betrealated">Betrealated</option>
                                 <option value="Banking">Banking</option>
                                 <option value="CS">CS</option>
                                 <option value="Checking">Checking</option>
                             </select>
                         </div>
-                        <div class="field" style="flex:0.8; min-width:140px;">
-                            <label style="font-size:14px;">Employee Type</label>
-                            <select id="newEmployeeType" style="width:100%; padding:12px 18px; border:2px solid #e9ecef; border-radius:12px; font-size:15px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
+                        <div class="field" style="flex:0.8; min-width:120px;">
+                            <label>Employee Type</label>
+                            <select id="newEmployeeType" style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
                                 <option value="local">🇱🇰 Local</option>
                                 <option value="expat">🌍 Expat</option>
                             </select>
                         </div>
-                        <div class="field" style="flex:0.5; min-width:100px;">
-                            <button class="btn btn-success" onclick="addEmployee()" style="width:100%; padding:12px 20px; font-size:15px;">
+                        <div class="field" style="flex:0.5; min-width:80px;">
+                            <button class="btn btn-success" onclick="addEmployee()" style="width:100%;">
                                 <i class="fas fa-plus"></i> Add
                             </button>
                         </div>
-                        <div class="field" style="flex:0.3; min-width:80px;">
-                            <button class="btn btn-secondary" onclick="hideAddEmployeeForm()" style="width:100%; padding:12px 20px; font-size:15px;">
+                        <div class="field" style="flex:0.3; min-width:60px;">
+                            <button class="btn btn-secondary" onclick="hideAddEmployeeForm()" style="width:100%;">
                                 <i class="fas fa-times"></i> Cancel
                             </button>
                         </div>
                     </div>
                 </div>
 
-                <div id="employeeListContainer" class="employee-list employee-list-large">
-                    <div class="no-data" style="grid-column: 1/-1; padding:40px; font-size:15px;">Loading employees...</div>
+                <div id="employeeListContainer" class="employee-list">
+                    <div class="no-data" style="grid-column: 1/-1;">Loading employees...</div>
                 </div>
             </div>
         </div>
 
         <!-- ===== TAB 3: USERS ===== -->
         <div id="tab-users" class="tab-content">
-            <div class="card card-large">
-                <div class="card-title card-title-large">
+            <div class="card">
+                <div class="card-title">
                     <i class="fas fa-user-plus"></i> Add New User
                 </div>
-                <div class="form-row form-row-large">
-                    <div class="field" style="flex:1.2; min-width:160px;">
-                        <label style="font-size:14px;">Username (Must match employee name)</label>
-                        <input type="text" id="newUsername" placeholder="Enter username..." style="width:100%; padding:12px 18px; border:2px solid #e9ecef; border-radius:12px; font-size:15px; font-family: 'Inter', sans-serif;">
+                <div class="form-row">
+                    <div class="field" style="flex:1.2; min-width:130px;">
+                        <label>Username (Must match employee name)</label>
+                        <input type="text" id="newUsername" placeholder="Enter username..." style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif;">
                     </div>
-                    <div class="field" style="flex:0.8; min-width:120px;">
-                        <label style="font-size:14px;">Password</label>
-                        <input type="text" id="newUserPassword" value="user123" style="width:100%; padding:12px 18px; border:2px solid #e9ecef; border-radius:12px; font-size:15px; font-family: 'Inter', sans-serif;">
+                    <div class="field" style="flex:0.8; min-width:100px;">
+                        <label>Password</label>
+                        <input type="text" id="newUserPassword" value="user123" style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif;">
                     </div>
-                    <div class="field" style="flex:0.8; min-width:120px;">
-                        <label style="font-size:14px;">Role</label>
-                        <select id="newUserRole" style="width:100%; padding:12px 18px; border:2px solid #e9ecef; border-radius:12px; font-size:15px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
+                    <div class="field" style="flex:0.8; min-width:100px;">
+                        <label>Role</label>
+                        <select id="newUserRole" style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
                             <option value="user">User</option>
                             <option value="sub-admin">Sub-Admin</option>
                             <option value="admin">Admin</option>
                         </select>
                     </div>
-                    <div class="field" style="flex:0.5; min-width:100px;">
-                        <button class="btn btn-success" onclick="addUser()" style="width:100%; padding:12px 20px; font-size:15px; margin-top:22px;">
+                    <div class="field" style="flex:0.5; min-width:80px;">
+                        <button class="btn btn-success" onclick="addUser()" style="width:100%; margin-top:20px;">
                             <i class="fas fa-plus"></i> Add
                         </button>
                     </div>
                 </div>
-                <div style="margin-top:12px; font-size:14px; color:#888;">
+                <div style="margin-top:10px; font-size:12px; color:#888;">
                     <i class="fas fa-info-circle"></i> Username must match an existing employee name
                 </div>
             </div>
 
-            <div class="card card-large">
-                <div class="card-title card-title-large">
+            <div class="card">
+                <div class="card-title">
                     <i class="fas fa-users-cog"></i> User Management
-                    <span style="font-size:14px; font-weight:400; color:#888; margin-left:10px;" id="userCount">(0 users)</span>
+                    <span style="font-size:12px; font-weight:400; color:#888; margin-left:8px;" id="userCount">(0 users)</span>
                 </div>
-                <div id="userListContainer" class="employee-list employee-list-large">
-                    <div class="no-data" style="grid-column: 1/-1; padding:40px; font-size:15px;">Loading users...</div>
+                <div id="userListContainer" class="employee-list">
+                    <div class="no-data" style="grid-column: 1/-1;">Loading users...</div>
                 </div>
             </div>
         </div>
 
         <!-- ===== TAB 4: SETTINGS ===== -->
         <div id="tab-settings" class="tab-content">
-            <div class="card card-large">
-                <div class="card-title card-title-large">
+            <div class="card">
+                <div class="card-title">
                     <i class="fas fa-sliders-h"></i> System Settings
                 </div>
-                <div class="settings-group settings-group-large">
-                    <div class="settings-item settings-item-large">
-                        <label style="font-size:14px;"><i class="fas fa-clock"></i> Local Employee Break Allowance (Daily)</label>
-                        <input type="text" id="localBreakAllowance" value="2:30" placeholder="HH:MM" style="font-size:15px; padding:12px;">
-                        <button class="btn btn-primary btn-sm" onclick="updateSetting('localBreakAllowance')" style="margin-top:10px; padding:10px 20px; font-size:14px;">
+                <div class="settings-group">
+                    <div class="settings-item">
+                        <label><i class="fas fa-clock"></i> Local Employee Break Allowance (Daily)</label>
+                        <input type="text" id="localBreakAllowance" value="2:30" placeholder="HH:MM">
+                        <button class="btn btn-primary btn-sm" onclick="updateSetting('localBreakAllowance')" style="margin-top:8px;">
                             <i class="fas fa-save"></i> Save
                         </button>
                     </div>
-                    <div class="settings-item settings-item-large">
-                        <label style="font-size:14px;"><i class="fas fa-clock"></i> Expat Employee Break Allowance (Daily)</label>
-                        <input type="text" id="expatBreakAllowance" value="2:00" placeholder="HH:MM" style="font-size:15px; padding:12px;">
-                        <button class="btn btn-primary btn-sm" onclick="updateSetting('expatBreakAllowance')" style="margin-top:10px; padding:10px 20px; font-size:14px;">
+                    <div class="settings-item">
+                        <label><i class="fas fa-clock"></i> Expat Employee Break Allowance (Daily)</label>
+                        <input type="text" id="expatBreakAllowance" value="2:00" placeholder="HH:MM">
+                        <button class="btn btn-primary btn-sm" onclick="updateSetting('expatBreakAllowance')" style="margin-top:8px;">
                             <i class="fas fa-save"></i> Save
                         </button>
                     </div>
-                    <div class="settings-item settings-item-large">
-                        <label style="font-size:14px;"><i class="fas fa-history"></i> Break History Limit</label>
-                        <input type="number" id="historyLimit" value="50" placeholder="Number of records" style="font-size:15px; padding:12px;">
-                        <button class="btn btn-primary btn-sm" onclick="updateSetting('historyLimit')" style="margin-top:10px; padding:10px 20px; font-size:14px;">
+                    <div class="settings-item">
+                        <label><i class="fas fa-history"></i> Break History Limit</label>
+                        <input type="number" id="historyLimit" value="50" placeholder="Number of records">
+                        <button class="btn btn-primary btn-sm" onclick="updateSetting('historyLimit')" style="margin-top:8px;">
                             <i class="fas fa-save"></i> Save
                         </button>
                     </div>
-                    <div class="settings-item settings-item-large">
-                        <label style="font-size:14px;"><i class="fas fa-sync-alt"></i> Auto-Refresh Interval</label>
-                        <input type="number" id="refreshInterval" value="15" placeholder="Seconds" style="font-size:15px; padding:12px;">
-                        <button class="btn btn-primary btn-sm" onclick="updateSetting('refreshInterval')" style="margin-top:10px; padding:10px 20px; font-size:14px;">
+                    <div class="settings-item">
+                        <label><i class="fas fa-sync-alt"></i> Auto-Refresh Interval</label>
+                        <input type="number" id="refreshInterval" value="15" placeholder="Seconds">
+                        <button class="btn btn-primary btn-sm" onclick="updateSetting('refreshInterval')" style="margin-top:8px;">
                             <i class="fas fa-save"></i> Save
                         </button>
                     </div>
-                    <div class="settings-item settings-item-large">
-                        <label style="font-size:14px;"><i class="fas fa-trash"></i> Danger Zone</label>
-                        <button class="btn btn-danger" onclick="clearAllData()" style="width:100%; padding:14px; font-size:15px;">
+                    <div class="settings-item">
+                        <label><i class="fas fa-trash"></i> Danger Zone</label>
+                        <button class="btn btn-danger" onclick="clearAllData()" style="width:100%;">
                             <i class="fas fa-exclamation-triangle"></i> Clear All Data
                         </button>
-                        <button class="btn btn-secondary" onclick="resetToDefault()" style="width:100%; margin-top:10px; padding:14px; font-size:15px;">
+                        <button class="btn btn-secondary" onclick="resetToDefault()" style="width:100%; margin-top:8px;">
                             <i class="fas fa-undo"></i> Reset to Default
                         </button>
                     </div>
@@ -333,87 +323,87 @@
         </div>
     </div>
 
-    <!-- ===== REPORT MODAL - LARGE ===== -->
+    <!-- ===== REPORT MODAL ===== -->
     <div class="modal-overlay" id="reportModal">
-        <div class="modal" style="max-width: 95vw; width: 95%; max-height: 95vh;">
+        <div class="modal" style="max-width: 80vw; width: 80%; max-height: 90vh;">
             <div class="modal-header">
-                <h2 style="font-size: 24px;"><i class="fas fa-file-alt"></i> Complete Break Report</h2>
-                <button class="modal-close" onclick="closeReportModal()" style="width:48px; height:48px; font-size:24px;">
+                <h2 style="font-size: 20px;"><i class="fas fa-file-alt"></i> Complete Break Report</h2>
+                <button class="modal-close" onclick="closeReportModal()" style="width:40px; height:40px; font-size:20px;">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div class="modal-body" style="padding: 30px 35px; max-height: calc(95vh - 80px); overflow-y: auto;">
+            <div class="modal-body" style="padding: 20px 25px; max-height: calc(90vh - 80px); overflow-y: auto;">
                 
                 <!-- Filter Section -->
-                <div style="margin-bottom: 25px; padding: 25px; background: #f8f9fa; border-radius: 14px; border: 1px solid #e9ecef;">
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; align-items: flex-end;">
+                <div style="margin-bottom: 15px; padding: 15px; background: #f8f9fa; border-radius: 10px; border: 1px solid #e9ecef;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: flex-end;">
                         <div>
-                            <label style="font-weight: 600; font-size: 14px; color: #555; display: block; margin-bottom: 6px;">
+                            <label style="font-weight: 600; font-size: 12px; color: #555; display: block; margin-bottom: 4px;">
                                 <i class="fas fa-user"></i> Employee
                             </label>
-                            <select id="reportEmployeeFilter" style="width:100%; padding: 12px 16px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 15px; font-family: 'Inter', sans-serif; background: white;">
+                            <select id="reportEmployeeFilter" style="width:100%; padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; background: white;">
                                 <option value="">All Employees</option>
                             </select>
                         </div>
                         <div>
-                            <label style="font-weight: 600; font-size: 14px; color: #555; display: block; margin-bottom: 6px;">
+                            <label style="font-weight: 600; font-size: 12px; color: #555; display: block; margin-bottom: 4px;">
                                 <i class="fas fa-calendar-alt"></i> From Date
                             </label>
-                            <input type="date" id="reportDateFrom" style="width:100%; padding: 12px 16px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 15px; font-family: 'Inter', sans-serif;">
+                            <input type="date" id="reportDateFrom" style="width:100%; padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif;">
                         </div>
                         <div>
-                            <label style="font-weight: 600; font-size: 14px; color: #555; display: block; margin-bottom: 6px;">
+                            <label style="font-weight: 600; font-size: 12px; color: #555; display: block; margin-bottom: 4px;">
                                 <i class="fas fa-calendar-alt"></i> To Date
                             </label>
-                            <input type="date" id="reportDateTo" style="width:100%; padding: 12px 16px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 15px; font-family: 'Inter', sans-serif;">
+                            <input type="date" id="reportDateTo" style="width:100%; padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif;">
                         </div>
                         <div>
-                            <label style="font-weight: 600; font-size: 14px; color: #555; display: block; margin-bottom: 6px;">
+                            <label style="font-weight: 600; font-size: 12px; color: #555; display: block; margin-bottom: 4px;">
                                 <i class="fas fa-filter"></i> Status
                             </label>
-                            <select id="reportStatusFilter" style="width:100%; padding: 12px 16px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 15px; font-family: 'Inter', sans-serif; background: white;">
+                            <select id="reportStatusFilter" style="width:100%; padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; background: white;">
                                 <option value="">All Status</option>
                                 <option value="Completed">✅ Completed</option>
                                 <option value="On Break">🔴 On Break</option>
                             </select>
                         </div>
-                        <div style="display: flex; gap: 12px; align-items: flex-end;">
-                            <button class="btn btn-primary" onclick="applyReportFilters()" style="padding: 12px 28px; font-size: 15px; flex:1;">
+                        <div style="display: flex; gap: 8px; align-items: flex-end;">
+                            <button class="btn btn-primary" onclick="applyReportFilters()" style="padding: 8px 18px; font-size: 13px; flex:1;">
                                 <i class="fas fa-search"></i> Apply
                             </button>
-                            <button class="btn btn-secondary" onclick="resetReportFilters()" style="padding: 12px 28px; font-size: 15px; flex:1;">
+                            <button class="btn btn-secondary" onclick="resetReportFilters()" style="padding: 8px 18px; font-size: 13px; flex:1;">
                                 <i class="fas fa-undo"></i> Reset
                             </button>
                         </div>
                     </div>
                     
                     <!-- Stats -->
-                    <div style="margin-top: 18px; display: flex; gap: 30px; flex-wrap: wrap; font-size: 15px; color: #555; padding: 16px 20px; background: white; border-radius: 10px; border: 1px solid #e9ecef;">
-                        <span><i class="fas fa-clock" style="color:#1a73e8;"></i> Total Records: <strong id="reportTotalRecords" style="color:#1a2332; font-size:16px;">0</strong></span>
-                        <span><i class="fas fa-check-circle" style="color:#28a745;"></i> Completed: <strong id="reportCompletedCount" style="color:#1a2332; font-size:16px;">0</strong></span>
-                        <span><i class="fas fa-circle" style="color:#dc3545;"></i> On Break: <strong id="reportActiveCount" style="color:#1a2332; font-size:16px;">0</strong></span>
+                    <div style="margin-top: 12px; display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px; color: #555; padding: 10px 14px; background: white; border-radius: 8px; border: 1px solid #e9ecef;">
+                        <span><i class="fas fa-clock" style="color:#1a73e8;"></i> Total Records: <strong id="reportTotalRecords" style="color:#1a2332;">0</strong></span>
+                        <span><i class="fas fa-check-circle" style="color:#28a745;"></i> Completed: <strong id="reportCompletedCount" style="color:#1a2332;">0</strong></span>
+                        <span><i class="fas fa-circle" style="color:#dc3545;"></i> On Break: <strong id="reportActiveCount" style="color:#1a2332;">0</strong></span>
                     </div>
                 </div>
 
                 <!-- Table -->
-                <div class="table-container" style="overflow-x: auto; border-radius: 14px; border: 1px solid #e9ecef; margin-top: 12px;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 14px; min-width: 1000px;">
+                <div class="table-container" style="overflow-x: auto; border-radius: 10px; border: 1px solid #e9ecef; margin-top: 10px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; min-width: 800px;">
                         <thead>
                             <tr>
-                                <th style="background: #1a2332; color: white; padding: 16px 20px; text-align: left; font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">DATE</th>
-                                <th style="background: #1a2332; color: white; padding: 16px 20px; text-align: left; font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">EMPLOYEE</th>
-                                <th style="background: #1a2332; color: white; padding: 16px 20px; text-align: left; font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">DEPARTMENT</th>
-                                <th style="background: #1a2332; color: white; padding: 16px 20px; text-align: left; font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">TYPE</th>
-                                <th style="background: #1a2332; color: white; padding: 16px 20px; text-align: left; font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">BREAK OUT</th>
-                                <th style="background: #1a2332; color: white; padding: 16px 20px; text-align: left; font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">BREAK IN</th>
-                                <th style="background: #1a2332; color: white; padding: 16px 20px; text-align: left; font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">DURATION</th>
-                                <th style="background: #1a2332; color: white; padding: 16px 20px; text-align: left; font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">STATUS</th>
+                                <th style="background: #1a2332; color: white; padding: 12px 16px; text-align: left; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">DATE</th>
+                                <th style="background: #1a2332; color: white; padding: 12px 16px; text-align: left; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">EMPLOYEE</th>
+                                <th style="background: #1a2332; color: white; padding: 12px 16px; text-align: left; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">DEPARTMENT</th>
+                                <th style="background: #1a2332; color: white; padding: 12px 16px; text-align: left; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">TYPE</th>
+                                <th style="background: #1a2332; color: white; padding: 12px 16px; text-align: left; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">BREAK OUT</th>
+                                <th style="background: #1a2332; color: white; padding: 12px 16px; text-align: left; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">BREAK IN</th>
+                                <th style="background: #1a2332; color: white; padding: 12px 16px; text-align: left; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">DURATION</th>
+                                <th style="background: #1a2332; color: white; padding: 12px 16px; text-align: left; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">STATUS</th>
                             </tr>
                         </thead>
                         <tbody id="reportBody">
                             <tr>
-                                <td colspan="8" style="text-align: center; padding: 50px; color: #adb5bd; font-size: 16px;">
-                                    <i class="fas fa-spinner fa-spin" style="font-size: 32px; display: block; margin-bottom: 12px; color: #1a73e8;"></i>
+                                <td colspan="8" style="text-align: center; padding: 40px; color: #adb5bd; font-size: 14px;">
+                                    <i class="fas fa-spinner fa-spin" style="font-size: 24px; display: block; margin-bottom: 10px; color: #1a73e8;"></i>
                                     Loading report...
                                 </td>
                             </tr>
@@ -422,11 +412,11 @@
                 </div>
 
                 <!-- Export Buttons -->
-                <div style="margin-top: 25px; display: flex; gap: 14px; flex-wrap: wrap; justify-content: flex-end;">
-                    <button class="btn btn-success" onclick="exportReport()" style="padding: 14px 32px; font-size: 15px; border-radius: 12px; font-weight: 600;">
+                <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
+                    <button class="btn btn-success" onclick="exportReport()" style="padding: 10px 24px; font-size: 13px; border-radius: 10px; font-weight: 600;">
                         <i class="fas fa-file-csv"></i> Export CSV
                     </button>
-                    <button class="btn btn-primary" onclick="exportReportPDF()" style="padding: 14px 32px; font-size: 15px; border-radius: 12px; font-weight: 600;">
+                    <button class="btn btn-primary" onclick="exportReportPDF()" style="padding: 10px 24px; font-size: 13px; border-radius: 10px; font-weight: 600;">
                         <i class="fas fa-file-pdf"></i> Export PDF
                     </button>
                 </div>
@@ -436,7 +426,7 @@
 
     <!-- ===== EDIT EMPLOYEE MODAL ===== -->
     <div class="modal-overlay" id="editEmployeeModal">
-        <div class="modal" style="max-width:550px;">
+        <div class="modal" style="max-width:500px;">
             <div class="modal-header">
                 <h2><i class="fas fa-edit"></i> Edit Employee</h2>
                 <button class="modal-close" onclick="closeEditEmployeeModal()">
@@ -446,12 +436,12 @@
             <div class="modal-body">
                 <div class="form-row">
                     <div class="field" style="flex:1; min-width:150px;">
-                        <label style="font-size:14px;">Employee Name</label>
-                        <input type="text" id="editEmployeeName" style="width:100%; padding:12px 18px; border:2px solid #e9ecef; border-radius:12px; font-size:15px; font-family: 'Inter', sans-serif;">
+                        <label>Employee Name</label>
+                        <input type="text" id="editEmployeeName" style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif;">
                     </div>
                     <div class="field" style="flex:1; min-width:130px;">
-                        <label style="font-size:14px;">Department</label>
-                        <select id="editEmployeeDepartment" style="width:100%; padding:12px 18px; border:2px solid #e9ecef; border-radius:12px; font-size:15px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
+                        <label>Department</label>
+                        <select id="editEmployeeDepartment" style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
                             <option value="Betrealated">Betrealated</option>
                             <option value="Banking">Banking</option>
                             <option value="CS">CS</option>
@@ -459,16 +449,16 @@
                         </select>
                     </div>
                     <div class="field" style="flex:1; min-width:120px;">
-                        <label style="font-size:14px;">Employee Type</label>
-                        <select id="editEmployeeType" style="width:100%; padding:12px 18px; border:2px solid #e9ecef; border-radius:12px; font-size:15px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
+                        <label>Employee Type</label>
+                        <select id="editEmployeeType" style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
                             <option value="local">🇱🇰 Local</option>
                             <option value="expat">🌍 Expat</option>
                         </select>
                     </div>
                 </div>
-                <div style="margin-top:18px; display:flex; gap:12px; justify-content:flex-end;">
-                    <button class="btn btn-secondary" onclick="closeEditEmployeeModal()" style="padding:12px 24px; font-size:15px;">Cancel</button>
-                    <button class="btn btn-primary" onclick="saveEditEmployee()" style="padding:12px 24px; font-size:15px;">
+                <div style="margin-top:15px; display:flex; gap:10px; justify-content:flex-end;">
+                    <button class="btn btn-secondary" onclick="closeEditEmployeeModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="saveEditEmployee()">
                         <i class="fas fa-save"></i> Save Changes
                     </button>
                 </div>
@@ -480,30 +470,8 @@
     <footer class="footer">
         <div class="footer-content">
             <div class="footer-section">
-                <h4><i class="fas fa-coffee" style="color:#ffc107;"></i> Break Tracker Pro</h4>
-                <p>Professional employee break management system built with ❤️ for modern workplaces.</p>
+                <p>&copy; 2026 Employee Break Management System. All rights reserved. | Made with <i class="fas fa-heart" style="color:#ff6b6b;"></i> by BBC</p>
             </div>
-            <div class="footer-section">
-                <h4>Quick Links</h4>
-                <p>
-                    <a href="#" style="color:rgba(255,255,255,0.6); text-decoration:none; display:block; margin:3px 0; font-size:13px;">Dashboard</a>
-                    <a href="#" style="color:rgba(255,255,255,0.6); text-decoration:none; display:block; margin:3px 0; font-size:13px;">Reports</a>
-                    <a href="#" style="color:rgba(255,255,255,0.6); text-decoration:none; display:block; margin:3px 0; font-size:13px;">Settings</a>
-                </p>
-            </div>
-            <div class="footer-section">
-                <h4>Connect With Us</h4>
-                <p style="font-size:13px;">Follow us for updates and support.</p>
-                <div class="social-links">
-                    <a href="#"><i class="fab fa-github"></i></a>
-                    <a href="#"><i class="fab fa-linkedin"></i></a>
-                    <a href="#"><i class="fab fa-twitter"></i></a>
-                    <a href="#"><i class="fab fa-youtube"></i></a>
-                </div>
-            </div>
-        </div>
-        <div class="footer-bottom">
-            &copy; 2026 Break Tracker Pro. All rights reserved. | Made with <i class="fas fa-heart" style="color:#ff6b6b;"></i> by Your Team
         </div>
     </footer>
 
