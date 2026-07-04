@@ -35,13 +35,27 @@ function checkAuth() {
 function updateUIForRole() {
     const isAdmin = currentUser && currentUser.role === 'admin';
     const isSubAdmin = currentUser && currentUser.role === 'sub-admin';
+    const isUser = currentUser && currentUser.role === 'user';
     
+    // Admin-only elements (Full access)
     document.querySelectorAll('.admin-only').forEach(el => {
         el.style.display = (isAdmin || isSubAdmin) ? 'flex' : 'none';
     });
     
+    // Settings - Only Admin (not Sub-Admin)
+    const settingsTab = document.getElementById('settingsTab');
+    if (settingsTab) {
+        settingsTab.style.display = isAdmin ? 'flex' : 'none';
+    }
+    
+    // Sub-admin only elements
     document.querySelectorAll('.subadmin-only').forEach(el => {
         el.style.display = (isAdmin || isSubAdmin) ? 'flex' : 'none';
+    });
+    
+    // Hide delete buttons for non-admin users
+    document.querySelectorAll('.break-delete-btn').forEach(el => {
+        el.style.display = isAdmin ? 'inline-flex' : 'none';
     });
     
     document.getElementById('userName').textContent = currentUser ? currentUser.username : 'Unknown';
@@ -85,8 +99,8 @@ document.addEventListener('DOMContentLoaded', function() {
     loadUsers();
     loadActiveBreaks();
     loadDepartmentsForSelect();
+    loadSettings(); // Load saved settings
     
-    // Auto-refresh every 15 seconds
     refreshTimer = setInterval(() => {
         loadActiveBreaks();
         if (currentEmployee) {
@@ -217,17 +231,16 @@ async function loadEmployees() {
         const response = await fetch(`${API_URL}/api/employees`);
         let employees = await response.json();
 
-        // 🔧 FILTER: If user is not admin, only show their own name
-        if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'sub-admin') {
+        // Filter: Non-admin users only see themselves
+        if (currentUser && currentUser.role === 'user') {
             employees = employees.filter(e => e.name === currentUser.username);
         }
 
-        // Filter by department (for admin view)
+        // Department filter (only for admin/sub-admin)
         if (currentDepartmentFilter !== 'all' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'sub-admin')) {
             employees = employees.filter(e => e.department === currentDepartmentFilter);
         }
 
-        // Update employee select dropdown
         const select = document.getElementById('employeeSelect');
         if (select) {
             select.innerHTML = '<option value="">Select an employee...</option>';
@@ -247,7 +260,6 @@ async function loadEmployees() {
                     select.appendChild(option);
                 });
                 
-                // Select first employee by default
                 if (!currentEmployee && employees.length > 0) {
                     select.value = employees[0].name;
                     onEmployeeChange();
@@ -269,12 +281,10 @@ async function loadEmployeeList(employees) {
             const response = await fetch(`${API_URL}/api/employees`);
             employees = await response.json();
             
-            // 🔧 FILTER: If user is not admin, only show their own name
-            if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'sub-admin') {
+            if (currentUser && currentUser.role === 'user') {
                 employees = employees.filter(e => e.name === currentUser.username);
             }
             
-            // Filter by department (for admin view)
             if (currentDepartmentFilter !== 'all' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'sub-admin')) {
                 employees = employees.filter(e => e.department === currentDepartmentFilter);
             }
@@ -295,14 +305,12 @@ async function loadEmployeeList(employees) {
         if (countSpan) countSpan.textContent = `(${employees.length} employees)`;
         container.innerHTML = '';
 
-        // Group by department
         const grouped = {};
         employees.forEach(emp => {
             if (!grouped[emp.department]) grouped[emp.department] = [];
             grouped[emp.department].push(emp);
         });
 
-        // Display by department
         for (const [dept, emps] of Object.entries(grouped)) {
             const header = document.createElement('div');
             header.className = 'department-header';
@@ -350,7 +358,6 @@ function createEmployeeItem(emp) {
         ? '<span class="badge badge-local">🇱🇰 Local</span>'
         : '<span class="badge badge-expat">🌍 Expat</span>';
     
-    // 🔧 Only show actions for admin/sub-admin
     const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'sub-admin');
     let actionsHtml = '';
     if (isAdmin) {
@@ -470,8 +477,8 @@ async function loadEmployeesForReport(employees) {
             employees = await response.json();
         }
         
-        // 🔧 FILTER: If user is not admin, only show their own name
-        if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'sub-admin') {
+        // For normal users, only show themselves in report filter
+        if (currentUser && currentUser.role === 'user') {
             employees = employees.filter(e => e.name === currentUser.username);
         }
         
@@ -489,10 +496,6 @@ async function loadEmployeesForReport(employees) {
         console.error('Error loading employees for report:', error);
     }
 }
-
-// =============================================
-// USER FUNCTIONS (continued)
-// =============================================
 
 async function loadUsers() {
     try {
@@ -701,6 +704,141 @@ async function deleteUser(username) {
 }
 
 // =============================================
+// SETTINGS FUNCTIONS - WITH PERSISTENT SAVE
+// =============================================
+
+async function loadSettings() {
+    try {
+        const response = await fetch(`${API_URL}/api/settings`);
+        const settings = await response.json();
+        
+        settings.forEach(setting => {
+            const key = setting.setting_key;
+            const value = setting.setting_value;
+            
+            if (key === 'local_break_allowance') {
+                document.getElementById('localBreakAllowance').value = value;
+            } else if (key === 'expat_break_allowance') {
+                document.getElementById('expatBreakAllowance').value = value;
+            } else if (key === 'history_limit') {
+                document.getElementById('historyLimit').value = value;
+            } else if (key === 'refresh_interval') {
+                document.getElementById('refreshInterval').value = value;
+                // Update auto-refresh interval
+                if (refreshTimer) clearInterval(refreshTimer);
+                refreshTimer = setInterval(() => {
+                    loadActiveBreaks();
+                    if (currentEmployee) {
+                        loadEmployeeBreaks(currentEmployee);
+                    }
+                }, parseInt(value) * 1000);
+            }
+        });
+    } catch (error) {
+        console.error('Error loading settings:', error);
+    }
+}
+
+async function updateSetting(setting) {
+    let value;
+    let settingKey;
+    let message;
+
+    switch (setting) {
+        case 'localBreakAllowance':
+            value = document.getElementById('localBreakAllowance').value.trim();
+            settingKey = 'local_break_allowance';
+            message = `Local employee break allowance updated to ${value}`;
+            break;
+        case 'expatBreakAllowance':
+            value = document.getElementById('expatBreakAllowance').value.trim();
+            settingKey = 'expat_break_allowance';
+            message = `Expat employee break allowance updated to ${value}`;
+            break;
+        case 'historyLimit':
+            value = document.getElementById('historyLimit').value.trim();
+            settingKey = 'history_limit';
+            message = `History limit updated to ${value} records`;
+            break;
+        case 'refreshInterval':
+            value = document.getElementById('refreshInterval').value.trim();
+            settingKey = 'refresh_interval';
+            message = `Auto-refresh interval updated to ${value} seconds`;
+            if (refreshTimer) clearInterval(refreshTimer);
+            refreshTimer = setInterval(() => {
+                loadActiveBreaks();
+                if (currentEmployee) {
+                    loadEmployeeBreaks(currentEmployee);
+                }
+            }, parseInt(value) * 1000);
+            break;
+        default:
+            showAlert('❌ Unknown setting', 'error');
+            return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/api/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ setting_key: settingKey, setting_value: value })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            showAlert(`✅ ${message}`, 'success');
+        } else {
+            showAlert('❌ Error saving setting: ' + result.error, 'error');
+        }
+    } catch (error) {
+        console.error('Error saving setting:', error);
+        showAlert('❌ Error connecting to server', 'error');
+    }
+}
+
+function clearAllData() {
+    if (!confirm('⚠️ WARNING: This will delete ALL data. Are you sure?')) return;
+    if (!confirm('⚠️ FINAL WARNING: This action cannot be undone!')) return;
+    showAlert('🗑️ All data cleared!', 'success');
+}
+
+function resetToDefault() {
+    if (!confirm('Reset all settings to default values?')) return;
+    
+    const defaults = {
+        'local_break_allowance': '2:30',
+        'expat_break_allowance': '2:00',
+        'history_limit': '50',
+        'refresh_interval': '15'
+    };
+    
+    document.getElementById('localBreakAllowance').value = '2:30';
+    document.getElementById('expatBreakAllowance').value = '2:00';
+    document.getElementById('historyLimit').value = '50';
+    document.getElementById('refreshInterval').value = '15';
+    
+    // Save all defaults
+    for (const [key, value] of Object.entries(defaults)) {
+        fetch(`${API_URL}/api/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ setting_key: key, setting_value: value })
+        }).catch(console.error);
+    }
+    
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(() => {
+        loadActiveBreaks();
+        if (currentEmployee) {
+            loadEmployeeBreaks(currentEmployee);
+        }
+    }, 15000);
+    
+    showAlert('✅ Settings reset to default!', 'success');
+}
+
+// =============================================
 // BREAK FUNCTIONS
 // =============================================
 
@@ -726,6 +864,7 @@ async function onEmployeeChange() {
 
 async function loadEmployeeBreaks(employeeName) {
     const tbody = document.getElementById('breakBody');
+    const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'sub-admin');
     
     if (!employeeName) {
         tbody.innerHTML = '<tr><td colspan="9" class="no-data">Please select an employee</td></tr>';
@@ -750,6 +889,13 @@ async function loadEmployeeBreaks(employeeName) {
                 '<span class="badge badge-warning">⏳ On Break</span>' :
                 '<span class="badge badge-success">✅ Completed</span>';
 
+            // Only show delete button for Admin (not Sub-Admin)
+            const deleteButton = isAdmin ? `
+                <button class="btn btn-danger btn-sm" onclick="deleteBreak(${row.id})">
+                    <i class="fas fa-trash"></i>
+                </button>
+            ` : `<span style="color:#888; font-size:11px;">-</span>`;
+
             tr.innerHTML = `
                 <td><strong>${row.date}</strong></td>
                 <td>${row.employee_name || employeeName}</td>
@@ -759,11 +905,7 @@ async function loadEmployeeBreaks(employeeName) {
                 <td>${row["IN"]}</td>
                 <td>${row["Duration"]}</td>
                 <td>${statusBadge}</td>
-                <td>
-                    <button class="btn btn-danger btn-sm" onclick="deleteBreak(${row.id})">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </td>
+                <td>${deleteButton}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -906,6 +1048,12 @@ async function breakIn() {
 }
 
 async function deleteBreak(id) {
+    // Only Admin can delete breaks
+    if (currentUser && currentUser.role !== 'admin') {
+        showAlert('❌ Only Admin can delete break records!', 'error');
+        return;
+    }
+    
     if (!confirm('Are you sure you want to delete this break?')) return;
     try {
         const response = await fetch(`${API_URL}/api/breaks/${id}`, {
@@ -924,17 +1072,36 @@ async function deleteBreak(id) {
 }
 
 // =============================================
-// REPORT FUNCTIONS
+// REPORT FUNCTIONS - WITH PERMISSIONS
 // =============================================
 
 async function loadFullReport() {
     try {
-        const response = await fetch(`${API_URL}/api/break-report`);
-        const data = await response.json();
+        // For normal users, only fetch their own report
+        let url = `${API_URL}/api/break-report`;
+        if (currentUser && currentUser.role === 'user') {
+            url += `?employeeName=${encodeURIComponent(currentUser.username)}`;
+        }
+        
+        const response = await fetch(url);
+        let data = await response.json();
+        
+        // If user is not admin/sub-admin, filter to only show their own records
+        if (currentUser && currentUser.role === 'user') {
+            data = data.filter(row => row.employee_name === currentUser.username);
+        }
         
         const tbody = document.getElementById('reportBody');
         if (!data || data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="no-data">No breaks found</td></tr>';
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 40px; color: #adb5bd; font-size: 14px;">
+                        <i class="fas fa-inbox" style="font-size: 32px; display: block; margin-bottom: 10px; color: #ddd;"></i>
+                        No breaks found
+                    </td>
+                </tr>
+            `;
+            updateReportStats([]);
             return;
         }
 
@@ -942,91 +1109,307 @@ async function loadFullReport() {
         data.forEach(row => {
             const tr = document.createElement('tr');
             const statusBadge = row.status === 'On Break' ?
-                '<span class="badge badge-warning">🔴 On Break</span>' :
-                '<span class="badge badge-success">✅ Completed</span>';
+                '<span class="badge badge-warning" style="padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; background: #fff3cd; color: #856404;">🔴 On Break</span>' :
+                '<span class="badge badge-success" style="padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; background: #d4edda; color: #155724;">✅ Completed</span>';
+            
+            const typeIcon = row.employee_type === 'local' ? '🇱🇰 Local' : '🌍 Expat';
+            
             tr.innerHTML = `
-                <td>${row.break_date}</td>
-                <td>${row.employee_name}</td>
-                <td>${row.department || '-'}</td>
-                <td>${row.employee_type === 'local' ? '🇱🇰 Local' : '🌍 Expat'}</td>
-                <td>${row.break_out}</td>
-                <td>${row.break_in}</td>
-                <td>${row.duration}</td>
-                <td>${statusBadge}</td>
+                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;"><strong>${row.break_date}</strong></td>
+                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;"><strong>${row.employee_name}</strong></td>
+                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;">${row.department || '-'}</td>
+                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;">${typeIcon}</td>
+                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;">${row.break_out}</td>
+                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;">${row.break_in}</td>
+                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle; font-weight: 600;">${row.duration}</td>
+                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;">${statusBadge}</td>
             `;
+            
+            if (row.status === 'On Break') {
+                tr.style.background = '#fff8e1';
+            }
+            
             tbody.appendChild(tr);
         });
+        
+        updateReportStats(data);
     } catch (error) {
         console.error('Error loading report:', error);
+        document.getElementById('reportBody').innerHTML = `
+            <tr>
+                <td colspan="8" style="text-align: center; padding: 40px; color: #dc3545; font-size: 14px;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 32px; display: block; margin-bottom: 10px;"></i>
+                    Error loading report
+                </td>
+            </tr>
+        `;
     }
+}
+
+function updateReportStats(data) {
+    const total = data ? data.length : 0;
+    const completed = data ? data.filter(row => row.status === 'Completed').length : 0;
+    const active = data ? data.filter(row => row.status === 'On Break').length : 0;
+    
+    document.getElementById('reportTotalRecords').textContent = total;
+    document.getElementById('reportCompletedCount').textContent = completed;
+    document.getElementById('reportActiveCount').textContent = active;
 }
 
 function applyReportFilters() {
-    showAlert('✅ Filters applied!', 'success');
+    const employeeFilter = document.getElementById('reportEmployeeFilter').value;
+    const dateFrom = document.getElementById('reportDateFrom').value;
+    const dateTo = document.getElementById('reportDateTo').value;
+    const statusFilter = document.getElementById('reportStatusFilter').value;
+    
+    const rows = document.querySelectorAll('#reportBody tr');
+    let visibleCount = 0;
+    let completedCount = 0;
+    let activeCount = 0;
+    
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 8) return;
+        
+        let show = true;
+        const rowEmployee = cells[1]?.textContent?.trim() || '';
+        const rowDate = cells[0]?.textContent?.trim() || '';
+        const rowStatus = cells[7]?.textContent?.trim() || '';
+        
+        // For normal users, force filter to only show their own records
+        if (currentUser && currentUser.role === 'user') {
+            if (rowEmployee !== currentUser.username) {
+                show = false;
+            }
+        }
+        
+        if (employeeFilter && rowEmployee !== employeeFilter) {
+            show = false;
+        }
+        
+        if (dateFrom && rowDate) {
+            const rowDateObj = new Date(rowDate);
+            const fromDateObj = new Date(dateFrom);
+            if (rowDateObj < fromDateObj) show = false;
+        }
+        
+        if (dateTo && rowDate) {
+            const rowDateObj = new Date(rowDate);
+            const toDateObj = new Date(dateTo);
+            toDateObj.setHours(23, 59, 59);
+            if (rowDateObj > toDateObj) show = false;
+        }
+        
+        if (statusFilter) {
+            const statusText = rowStatus.includes('Completed') ? 'Completed' : 'On Break';
+            if (statusText !== statusFilter) show = false;
+        }
+        
+        row.style.display = show ? '' : 'none';
+        
+        if (show) {
+            visibleCount++;
+            if (rowStatus.includes('Completed')) completedCount++;
+            else if (rowStatus.includes('On Break')) activeCount++;
+        }
+    });
+    
+    document.getElementById('reportTotalRecords').textContent = visibleCount;
+    document.getElementById('reportCompletedCount').textContent = completedCount;
+    document.getElementById('reportActiveCount').textContent = activeCount;
+    
+    showAlert(`✅ Filter applied: ${visibleCount} records found`, 'success');
 }
 
 function resetReportFilters() {
-    showAlert('✅ Filters reset!', 'success');
+    document.getElementById('reportEmployeeFilter').value = '';
+    document.getElementById('reportDateFrom').value = '';
+    document.getElementById('reportDateTo').value = '';
+    document.getElementById('reportStatusFilter').value = '';
+    
+    const rows = document.querySelectorAll('#reportBody tr');
+    let totalCount = 0;
+    let completedCount = 0;
+    let activeCount = 0;
+    
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 8) return;
+        
+        // For normal users, only show their own records
+        let show = true;
+        if (currentUser && currentUser.role === 'user') {
+            const rowEmployee = cells[1]?.textContent?.trim() || '';
+            if (rowEmployee !== currentUser.username) {
+                show = false;
+            }
+        }
+        
+        row.style.display = show ? '' : 'none';
+        
+        if (show) {
+            totalCount++;
+            const statusText = cells[7]?.textContent?.trim() || '';
+            if (statusText.includes('Completed')) completedCount++;
+            else if (statusText.includes('On Break')) activeCount++;
+        }
+    });
+    
+    document.getElementById('reportTotalRecords').textContent = totalCount;
+    document.getElementById('reportCompletedCount').textContent = completedCount;
+    document.getElementById('reportActiveCount').textContent = activeCount;
+    
+    showAlert('✅ Filters reset', 'success');
 }
 
 function exportReport() {
-    showAlert('📊 Report export coming soon!', 'success');
+    const rows = document.querySelectorAll('#reportBody tr');
+    let csv = 'Date,Employee,Department,Type,Break Out,Break In,Duration,Status\n';
+    let count = 0;
+    
+    rows.forEach(row => {
+        if (row.style.display === 'none') return;
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 8) return;
+        
+        count++;
+        const date = cells[0]?.textContent?.trim() || '';
+        const employee = cells[1]?.textContent?.trim() || '';
+        const department = cells[2]?.textContent?.trim() || '';
+        const type = cells[3]?.textContent?.trim() || '';
+        const breakOut = cells[4]?.textContent?.trim() || '';
+        const breakIn = cells[5]?.textContent?.trim() || '';
+        const duration = cells[6]?.textContent?.trim() || '';
+        const status = cells[7]?.textContent?.trim() || '';
+        
+        csv += `${date},${employee},${department},${type},${breakOut},${breakIn},${duration},${status}\n`;
+    });
+    
+    if (count === 0) {
+        showAlert('❌ No data to export!', 'error');
+        return;
+    }
+    
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `break-report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    
+    showAlert(`✅ ${count} records exported successfully!`, 'success');
 }
 
 function exportReportPDF() {
-    showAlert('📄 PDF export coming soon!', 'success');
-}
-
-// =============================================
-// SETTINGS FUNCTIONS
-// =============================================
-
-function updateSetting(setting) {
-    let value;
-    let message;
-
-    switch (setting) {
-        case 'localBreakAllowance':
-            value = document.getElementById('localBreakAllowance').value;
-            message = `Local employee break allowance updated to ${value}`;
-            break;
-        case 'expatBreakAllowance':
-            value = document.getElementById('expatBreakAllowance').value;
-            message = `Expat employee break allowance updated to ${value}`;
-            break;
-        case 'historyLimit':
-            value = document.getElementById('historyLimit').value;
-            message = `History limit updated to ${value} records`;
-            break;
-        case 'refreshInterval':
-            value = document.getElementById('refreshInterval').value;
-            message = `Auto-refresh interval updated to ${value} seconds`;
-            if (refreshTimer) clearInterval(refreshTimer);
-            refreshTimer = setInterval(() => {
-                loadActiveBreaks();
-                if (currentEmployee) {
-                    loadEmployeeBreaks(currentEmployee);
-                }
-            }, value * 1000);
-            break;
+    const rows = document.querySelectorAll('#reportBody tr');
+    let visibleCount = 0;
+    
+    // Count visible rows
+    rows.forEach(row => {
+        if (row.style.display !== 'none') {
+            const cells = row.querySelectorAll('td');
+            if (cells.length >= 8) visibleCount++;
+        }
+    });
+    
+    if (visibleCount === 0) {
+        showAlert('❌ No data to export!', 'error');
+        return;
     }
-
-    showAlert(`✅ ${message}`, 'success');
-}
-
-function clearAllData() {
-    if (!confirm('⚠️ WARNING: This will delete ALL data. Are you sure?')) return;
-    if (!confirm('⚠️ FINAL WARNING: This action cannot be undone!')) return;
-    showAlert('🗑️ All data cleared!', 'success');
-}
-
-function resetToDefault() {
-    if (!confirm('Reset all settings to default values?')) return;
-    document.getElementById('localBreakAllowance').value = '2:30';
-    document.getElementById('expatBreakAllowance').value = '2:00';
-    document.getElementById('historyLimit').value = '50';
-    document.getElementById('refreshInterval').value = '15';
-    showAlert('✅ Settings reset to default!', 'success');
+    
+    const printWindow = window.open('', '_blank');
+    const date = new Date().toLocaleString();
+    
+    let tableRows = '';
+    rows.forEach(row => {
+        if (row.style.display === 'none') return;
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 8) return;
+        
+        const statusColor = cells[7]?.textContent?.includes('On Break') ? '#dc3545' : '#28a745';
+        tableRows += `
+            <tr>
+                <td style="padding:8px 10px; border-bottom:1px solid #ddd;">${cells[0]?.textContent?.trim() || ''}</td>
+                <td style="padding:8px 10px; border-bottom:1px solid #ddd;">${cells[1]?.textContent?.trim() || ''}</td>
+                <td style="padding:8px 10px; border-bottom:1px solid #ddd;">${cells[2]?.textContent?.trim() || ''}</td>
+                <td style="padding:8px 10px; border-bottom:1px solid #ddd;">${cells[3]?.textContent?.trim() || ''}</td>
+                <td style="padding:8px 10px; border-bottom:1px solid #ddd;">${cells[4]?.textContent?.trim() || ''}</td>
+                <td style="padding:8px 10px; border-bottom:1px solid #ddd;">${cells[5]?.textContent?.trim() || ''}</td>
+                <td style="padding:8px 10px; border-bottom:1px solid #ddd; font-weight:600;">${cells[6]?.textContent?.trim() || ''}</td>
+                <td style="padding:8px 10px; border-bottom:1px solid #ddd; color:${statusColor}; font-weight:bold;">${cells[7]?.textContent?.trim() || ''}</td>
+            </tr>
+        `;
+    });
+    
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Break Report - ${new Date().toISOString().split('T')[0]}</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 30px; }
+                h1 { color: #1a73e8; border-bottom: 3px solid #1a73e8; padding-bottom: 10px; font-size: 24px; }
+                .subtitle { color: #666; font-size: 14px; margin-bottom: 20px; }
+                table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
+                th { background: #1a2332; color: white; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; }
+                td { padding: 8px 12px; border-bottom: 1px solid #ddd; }
+                tr:nth-child(even) { background: #f8f9fa; }
+                .summary { margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #1a73e8; }
+                .footer { margin-top: 30px; text-align: center; color: #888; font-size: 12px; border-top: 1px solid #ddd; padding-top: 15px; }
+                .no-print { display: none; }
+                @media print {
+                    .no-print { display: none; }
+                    body { padding: 10px; }
+                }
+            </style>
+        </head>
+        <body>
+            <h1>📊 Complete Break Report</h1>
+            <div class="subtitle">Generated: ${date}</div>
+            
+            <div class="summary">
+                <strong>Summary:</strong> 
+                Total Records: ${document.getElementById('reportTotalRecords')?.textContent || 0} | 
+                Completed: ${document.getElementById('reportCompletedCount')?.textContent || 0} | 
+                On Break: ${document.getElementById('reportActiveCount')?.textContent || 0}
+            </div>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Employee</th>
+                        <th>Department</th>
+                        <th>Type</th>
+                        <th>Break Out</th>
+                        <th>Break In</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tableRows || '<tr><td colspan="8" style="text-align:center;">No data available</td></tr>'}
+                </tbody>
+            </table>
+            
+            <div class="footer">
+                &copy; ${new Date().getFullYear()} Break Tracker Pro - All Rights Reserved
+            </div>
+            <div class="no-print" style="margin-top:20px; text-align:center;">
+                <button onclick="window.print()" style="padding:10px 30px; background:#1a73e8; color:white; border:none; border-radius:5px; cursor:pointer; font-size:14px;">
+                    🖨️ Print / Save as PDF
+                </button>
+                <button onclick="window.close()" style="padding:10px 30px; background:#6c757d; color:white; border:none; border-radius:5px; cursor:pointer; font-size:14px; margin-left:10px;">
+                    ❌ Close
+                </button>
+            </div>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    
+    showAlert(`✅ ${visibleCount} records exported to PDF!`, 'success');
 }
 
 // =============================================
