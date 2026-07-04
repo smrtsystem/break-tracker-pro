@@ -221,6 +221,171 @@ app.get('/api/db-test', async (req, res) => {
 });
 
 // =============================================
+// MIGRATION ROUTE - Run this once to fix schema
+// =============================================
+
+app.get('/api/migrate', async (req, res) => {
+    try {
+        await runMigration();
+        res.json({ success: true, message: '✅ Migration completed successfully!' });
+    } catch (error) {
+        console.error('Migration error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+async function runMigration() {
+    const client = await pool.connect();
+    try {
+        // 1. Create departments table if it doesn't exist
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS departments (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(50) NOT NULL UNIQUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // 2. Insert default departments
+        await client.query(`
+            INSERT INTO departments (name) VALUES 
+                ('Betrealated'),
+                ('Banking'),
+                ('CS'),
+                ('Checking')
+            ON CONFLICT (name) DO NOTHING
+        `);
+
+        // 3. Add department_id column to employees
+        await client.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'employees' AND column_name = 'department_id'
+                ) THEN
+                    ALTER TABLE employees ADD COLUMN department_id INTEGER;
+                    ALTER TABLE employees 
+                    ADD CONSTRAINT fk_employee_department 
+                    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE;
+                END IF;
+            END $$
+        `);
+
+        // 4. Set default department for existing employees
+        await client.query(`
+            UPDATE employees 
+            SET department_id = (SELECT id FROM departments WHERE name = 'Betrealated' LIMIT 1)
+            WHERE department_id IS NULL
+        `);
+
+        // 5. Make department_id NOT NULL
+        await client.query(`
+            ALTER TABLE employees ALTER COLUMN department_id SET NOT NULL
+        `);
+
+        // 6. Add employee_type column
+        await client.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'employees' AND column_name = 'employee_type'
+                ) THEN
+                    ALTER TABLE employees ADD COLUMN employee_type VARCHAR(20) DEFAULT 'local';
+                    ALTER TABLE employees 
+                    ADD CONSTRAINT chk_employee_type 
+                    CHECK (employee_type IN ('local', 'expat'));
+                END IF;
+            END $$
+        `);
+
+        // 7. Update employee_type for existing employees
+        await client.query(`
+            UPDATE employees SET employee_type = 'local' WHERE employee_type IS NULL
+        `);
+
+        // 8. Add can_manage_users to users
+        await client.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'users' AND column_name = 'can_manage_users'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN can_manage_users BOOLEAN DEFAULT FALSE;
+                END IF;
+            END $$
+        `);
+
+        // 9. Update existing users
+        await client.query(`
+            UPDATE users SET can_manage_users = FALSE WHERE can_manage_users IS NULL
+        `);
+
+        // 10. Create indexes
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department_id);
+            CREATE INDEX IF NOT EXISTS idx_employees_name ON employees(name)
+        `);
+
+        // 11. Update admin user
+        await client.query(`
+            UPDATE users SET password = '535680', role = 'admin', can_manage_users = TRUE 
+            WHERE username = 'admin'
+        `);
+
+        await client.query(`
+            INSERT INTO users (username, password, role, can_manage_users) 
+            VALUES ('admin', '535680', 'admin', TRUE)
+            ON CONFLICT (username) DO NOTHING
+        `);
+
+        // 12. Insert sample employees
+        const depts = await client.query('SELECT id, name FROM departments');
+        const deptMap = {};
+        depts.rows.forEach(d => { deptMap[d.name] = d.id; });
+
+        const sampleEmployees = [
+            { name: 'Rajesh Sharma', dept: 'Betrealated', type: 'local' },
+            { name: 'Priya Patel', dept: 'Betrealated', type: 'local' },
+            { name: 'John Smith', dept: 'Betrealated', type: 'expat' },
+            { name: 'Amit Kumar', dept: 'Banking', type: 'local' },
+            { name: 'Sneha Reddy', dept: 'Banking', type: 'local' },
+            { name: 'David Wilson', dept: 'Banking', type: 'expat' },
+            { name: 'Vikram Singh', dept: 'CS', type: 'local' },
+            { name: 'Ananya Gupta', dept: 'CS', type: 'local' },
+            { name: 'Michael Brown', dept: 'CS', type: 'expat' },
+            { name: 'Deepak Verma', dept: 'Checking', type: 'local' },
+            { name: 'Kavita Nair', dept: 'Checking', type: 'local' },
+            { name: 'Robert Taylor', dept: 'Checking', type: 'expat' }
+        ];
+
+        for (const emp of sampleEmployees) {
+            const deptId = deptMap[emp.dept];
+            if (deptId) {
+                await client.query(
+                    `INSERT INTO employees (name, department_id, employee_type) 
+                     VALUES ($1, $2, $3) ON CONFLICT (name, department_id) DO NOTHING`,
+                    [emp.name, deptId, emp.type]
+                );
+            }
+        }
+
+        // 13. Create user for Rajesh Sharma
+        await client.query(`
+            INSERT INTO users (username, password, role, can_manage_users) 
+            VALUES ('Rajesh Sharma', 'user123', 'user', FALSE)
+            ON CONFLICT (username) DO NOTHING
+        `);
+
+        console.log('✅ Migration completed successfully!');
+    } finally {
+        client.release();
+    }
+}
+
+// =============================================
 // DEPARTMENT ROUTES
 // =============================================
 
@@ -882,23 +1047,5 @@ app.listen(PORT, () => {
     console.log(`📊 Open your app in browser`);
     console.log(`👑 Main Admin: admin / 535680`);
     console.log(`📦 Database: PostgreSQL`);
+    console.log(`🔧 Migration available at: /api/migrate (run once!)`);
 });
-// TEMPORARY MIGRATION ROUTE - REMOVE AFTER RUNNING
-app.get('/api/migrate', async (req, res) => {
-    try {
-        await runMigration();
-        res.json({ success: true, message: 'Migration completed successfully!' });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-async function runMigration() {
-    const client = await pool.connect();
-    try {
-        // Add all columns and constraints here
-        // ... (the SQL from below)
-    } finally {
-        client.release();
-    }
-}
