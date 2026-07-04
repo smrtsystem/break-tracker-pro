@@ -164,7 +164,6 @@ function loadDepartmentsForSelect() {
 function filterDepartment(department) {
     currentDepartmentFilter = department;
     
-    // Update tab buttons
     document.querySelectorAll('.dept-tab').forEach(tab => {
         tab.classList.remove('active');
         tab.classList.add('btn-secondary');
@@ -218,8 +217,13 @@ async function loadEmployees() {
         const response = await fetch(`${API_URL}/api/employees`);
         let employees = await response.json();
 
-        // Filter by department
-        if (currentDepartmentFilter !== 'all') {
+        // 🔧 FILTER: If user is not admin, only show their own name
+        if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'sub-admin') {
+            employees = employees.filter(e => e.name === currentUser.username);
+        }
+
+        // Filter by department (for admin view)
+        if (currentDepartmentFilter !== 'all' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'sub-admin')) {
             employees = employees.filter(e => e.department === currentDepartmentFilter);
         }
 
@@ -227,22 +231,32 @@ async function loadEmployees() {
         const select = document.getElementById('employeeSelect');
         if (select) {
             select.innerHTML = '<option value="">Select an employee...</option>';
-            employees.forEach(emp => {
-                const option = document.createElement('option');
-                option.value = emp.name;
-                const typeIcon = emp.employee_type === 'local' ? '🇱🇰' : '🌍';
-                option.textContent = `${emp.name} (${emp.department}) ${typeIcon}`;
-                select.appendChild(option);
-            });
             
-            // Select first employee by default if no current employee
-            if (!currentEmployee && employees.length > 0) {
-                select.value = employees[0].name;
-                onEmployeeChange();
+            if (employees.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No employees found';
+                option.disabled = true;
+                select.appendChild(option);
+            } else {
+                employees.forEach(emp => {
+                    const option = document.createElement('option');
+                    option.value = emp.name;
+                    const typeIcon = emp.employee_type === 'local' ? '🇱🇰' : '🌍';
+                    option.textContent = `${emp.name} (${emp.department}) ${typeIcon}`;
+                    select.appendChild(option);
+                });
+                
+                // Select first employee by default
+                if (!currentEmployee && employees.length > 0) {
+                    select.value = employees[0].name;
+                    onEmployeeChange();
+                }
             }
         }
         
         await loadEmployeeList(employees);
+        await loadEmployeesForReport(employees);
     } catch (error) {
         console.error('Error loading employees:', error);
         showAlert('Error loading employees', 'error');
@@ -255,8 +269,13 @@ async function loadEmployeeList(employees) {
             const response = await fetch(`${API_URL}/api/employees`);
             employees = await response.json();
             
-            // Filter by department
-            if (currentDepartmentFilter !== 'all') {
+            // 🔧 FILTER: If user is not admin, only show their own name
+            if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'sub-admin') {
+                employees = employees.filter(e => e.name === currentUser.username);
+            }
+            
+            // Filter by department (for admin view)
+            if (currentDepartmentFilter !== 'all' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'sub-admin')) {
                 employees = employees.filter(e => e.department === currentDepartmentFilter);
             }
         }
@@ -267,7 +286,7 @@ async function loadEmployeeList(employees) {
         if (!employees || employees.length === 0) {
             container.innerHTML = `<div class="no-data" style="grid-column: 1/-1;">
                 <i class="fas fa-users" style="font-size:24px; color:#ddd;"></i>
-                <p style="margin-top:8px;">No employees found in ${currentDepartmentFilter === 'all' ? 'any department' : currentDepartmentFilter}</p>
+                <p style="margin-top:8px;">No employees found</p>
             </div>`;
             if (countSpan) countSpan.textContent = '(0 employees)';
             return;
@@ -285,17 +304,14 @@ async function loadEmployeeList(employees) {
 
         // Display by department
         for (const [dept, emps] of Object.entries(grouped)) {
-            // Department header
             const header = document.createElement('div');
             header.className = 'department-header';
             header.innerHTML = `<i class="fas fa-building"></i> ${dept} (${emps.length})`;
             container.appendChild(header);
             
-            // Separate local and expat
             const locals = emps.filter(e => e.employee_type === 'local');
             const expats = emps.filter(e => e.employee_type === 'expat');
             
-            // Local employees
             if (locals.length > 0) {
                 const typeHeader = document.createElement('div');
                 typeHeader.className = 'employee-type-header';
@@ -309,7 +325,6 @@ async function loadEmployeeList(employees) {
                 });
             }
             
-            // Expat employees
             if (expats.length > 0) {
                 const typeHeader = document.createElement('div');
                 typeHeader.className = 'employee-type-header';
@@ -335,20 +350,29 @@ function createEmployeeItem(emp) {
         ? '<span class="badge badge-local">🇱🇰 Local</span>'
         : '<span class="badge badge-expat">🌍 Expat</span>';
     
+    // 🔧 Only show actions for admin/sub-admin
+    const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'sub-admin');
+    let actionsHtml = '';
+    if (isAdmin) {
+        actionsHtml = `
+            <div class="actions">
+                <button class="btn btn-primary btn-sm" onclick="openEditEmployeeModal(${emp.id}, '${emp.name}', '${emp.department}', '${emp.employee_type}')" title="Edit Employee">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="deleteEmployee(${emp.id})" title="Delete Employee">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        `;
+    }
+    
     div.innerHTML = `
         <span class="name">
             <i class="fas fa-user" style="color:#1a73e8; margin-right:8px;"></i>
             ${emp.name}
             ${typeBadge}
         </span>
-        <div class="actions">
-            <button class="btn btn-primary btn-sm" onclick="openEditEmployeeModal(${emp.id}, '${emp.name}', '${emp.department}', '${emp.employee_type}')" title="Edit Employee">
-                <i class="fas fa-edit"></i>
-            </button>
-            <button class="btn btn-danger btn-sm" onclick="deleteEmployee(${emp.id})" title="Delete Employee">
-                <i class="fas fa-trash"></i>
-            </button>
-        </div>
+        ${actionsHtml}
     `;
     return div;
 }
@@ -377,7 +401,6 @@ async function addEmployee() {
             document.getElementById('newEmployeeName').value = '';
             hideAddEmployeeForm();
             await loadEmployees();
-            await loadEmployeesForReport();
         } else {
             showAlert('❌ ' + result.error, 'error');
         }
@@ -410,7 +433,6 @@ async function saveEditEmployee() {
             showAlert(`✅ Employee updated successfully!`, 'success');
             closeEditEmployeeModal();
             await loadEmployees();
-            await loadEmployeesForReport();
         } else {
             showAlert('❌ ' + result.error, 'error');
         }
@@ -421,7 +443,7 @@ async function saveEditEmployee() {
 }
 
 async function deleteEmployee(id) {
-    if (!confirm('Are you sure you want to delete this employee? This will also delete all their break records.')) return;
+    if (!confirm('Are you sure you want to delete this employee?')) return;
     try {
         const response = await fetch(`${API_URL}/api/employees/${id}`, {
             method: 'DELETE'
@@ -429,7 +451,6 @@ async function deleteEmployee(id) {
         if (response.ok) {
             showAlert('✅ Employee deleted successfully!', 'success');
             await loadEmployees();
-            await loadEmployeesForReport();
         } else {
             showAlert('❌ Error deleting employee', 'error');
         }
@@ -440,6 +461,37 @@ async function deleteEmployee(id) {
 
 // =============================================
 // USER FUNCTIONS
+// =============================================
+
+async function loadEmployeesForReport(employees) {
+    try {
+        if (!employees) {
+            const response = await fetch(`${API_URL}/api/employees`);
+            employees = await response.json();
+        }
+        
+        // 🔧 FILTER: If user is not admin, only show their own name
+        if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'sub-admin') {
+            employees = employees.filter(e => e.name === currentUser.username);
+        }
+        
+        const select = document.getElementById('reportEmployeeFilter');
+        if (!select) return;
+        
+        select.innerHTML = '<option value="">All Employees</option>';
+        employees.forEach(emp => {
+            const option = document.createElement('option');
+            option.value = emp.name;
+            option.textContent = `${emp.name} (${emp.department})`;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading employees for report:', error);
+    }
+}
+
+// =============================================
+// USER FUNCTIONS (continued)
 // =============================================
 
 async function loadUsers() {
@@ -517,7 +569,6 @@ async function addUser() {
     }
 
     try {
-        // Check if employee exists
         const empCheck = await fetch(`${API_URL}/api/employees`);
         const employees = await empCheck.json();
         const employeeExists = employees.some(e => e.name === username);
@@ -875,26 +926,6 @@ async function deleteBreak(id) {
 // =============================================
 // REPORT FUNCTIONS
 // =============================================
-
-async function loadEmployeesForReport() {
-    try {
-        const response = await fetch(`${API_URL}/api/employees`);
-        const employees = await response.json();
-        
-        const select = document.getElementById('reportEmployeeFilter');
-        if (!select) return;
-        
-        select.innerHTML = '<option value="">All Employees</option>';
-        employees.forEach(emp => {
-            const option = document.createElement('option');
-            option.value = emp.name;
-            option.textContent = `${emp.name} (${emp.department})`;
-            select.appendChild(option);
-        });
-    } catch (error) {
-        console.error('Error loading employees for report:', error);
-    }
-}
 
 async function loadFullReport() {
     try {
