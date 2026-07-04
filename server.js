@@ -17,14 +17,26 @@ app.get('/', (req, res) => {
 });
 
 // =============================================
-// DATABASE CONNECTION - URL ENCODING (OPTION 1)
+// DATABASE CONNECTION - FIXED
 // =============================================
 
-// Password मा & छ भने %26 ले replace गर्नुहोस्
-const DATABASE_URL = 'postgresql://break_tracker_db_user:RY4Vzq5DW2Mu3f3aXDErh5h01iqpJaha%26dpg-d92vnc6gvqtc739mcubg-a.singapore-postgres.render.com/break_tracker_db';
+// ✅ ONLY use environment variable - NO hardcoded fallback!
+const DATABASE_URL = process.env.DATABASE_URL;
+
+if (!DATABASE_URL) {
+    console.error('❌ DATABASE_URL environment variable is not set!');
+    console.error('Please set DATABASE_URL in Render environment variables.');
+    process.exit(1);
+}
+
+// Clean the URL - remove any quotes, spaces, or newlines
+const cleanUrl = DATABASE_URL.trim().replace(/^"|"$/g, '').replace(/\s/g, '');
+
+console.log('📦 Connecting to database...');
+console.log('📦 URL prefix:', cleanUrl.substring(0, 40) + '...');
 
 const pool = new Pool({
-    connectionString: DATABASE_URL,
+    connectionString: cleanUrl,
     ssl: {
         rejectUnauthorized: false,
         require: true
@@ -63,13 +75,35 @@ connectDB();
 // =============================================
 
 async function createTables() {
-    // Create employees table
+    // Create departments table
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS departments (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(50) NOT NULL UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    // Insert default departments
+    const defaultDepartments = ['Betrealated', 'Banking', 'CS', 'Checking'];
+    for (const dept of defaultDepartments) {
+        await pool.query(
+            'INSERT INTO departments (name) VALUES ($1) ON CONFLICT (name) DO NOTHING',
+            [dept]
+        );
+    }
+    console.log('✅ Default departments created');
+
+    // Create employees table with department and type
     await pool.query(`
         CREATE TABLE IF NOT EXISTS employees (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(100) NOT NULL UNIQUE,
+            name VARCHAR(100) NOT NULL,
+            department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+            employee_type VARCHAR(20) NOT NULL CHECK (employee_type IN ('local', 'expat')),
             total_break_allowance INTERVAL DEFAULT '2 hours 30 minutes',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(name, department_id)
         )
     `);
 
@@ -93,6 +127,7 @@ async function createTables() {
             username VARCHAR(50) NOT NULL UNIQUE,
             password VARCHAR(100) NOT NULL,
             role VARCHAR(20) DEFAULT 'user',
+            can_manage_users BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     `);
@@ -109,42 +144,51 @@ async function createTables() {
         WHERE break_in IS NULL
     `);
 
-    // Insert default admin
+    // Insert default admin (main admin)
     const adminCheck = await pool.query('SELECT id FROM users WHERE username = $1', ['admin']);
     if (adminCheck.rows.length === 0) {
         await pool.query(
-            'INSERT INTO users (username, password, role) VALUES ($1, $2, $3)',
-            ['admin', 'admin123', 'admin']
+            'INSERT INTO users (username, password, role, can_manage_users) VALUES ($1, $2, $3, $4)',
+            ['admin', '535680', 'admin', true]
         );
-        console.log('✅ Default admin user created');
+        console.log('✅ Main admin user created (admin / 535680)');
     }
 
-    // Insert default employees
-    const defaultEmployees = [
-        'Pradeep Singh', 'Arunava Hazra', 'Sonu Shaw', 'Ashish Mushla',
-        'Modallil Ahmed Baig', 'Vicky Patel', 'Souvik Nag', 'Chandan Gupta',
-        'Hemang Kerung', 'Devbrat Ojha', 'MD Safik Kureshi', 'Mithilesh Saini',
-        'Lokender Singh', 'Pushkar Kathik', 'Vikash Bundela', 'Mahalu Chaudhari',
-        'Sanjay Shrestha', 'Ayush Gupta'
+    // Insert sample employees by department
+    const sampleEmployees = [
+        // Betrealated Department
+        { name: 'Rajesh Sharma', dept: 'Betrealated', type: 'local' },
+        { name: 'Priya Patel', dept: 'Betrealated', type: 'local' },
+        { name: 'John Smith', dept: 'Betrealated', type: 'expat' },
+        
+        // Banking Department
+        { name: 'Amit Kumar', dept: 'Banking', type: 'local' },
+        { name: 'Sneha Reddy', dept: 'Banking', type: 'local' },
+        { name: 'David Wilson', dept: 'Banking', type: 'expat' },
+        
+        // CS Department
+        { name: 'Vikram Singh', dept: 'CS', type: 'local' },
+        { name: 'Ananya Gupta', dept: 'CS', type: 'local' },
+        { name: 'Michael Brown', dept: 'CS', type: 'expat' },
+        
+        // Checking Department
+        { name: 'Deepak Verma', dept: 'Checking', type: 'local' },
+        { name: 'Kavita Nair', dept: 'Checking', type: 'local' },
+        { name: 'Robert Taylor', dept: 'Checking', type: 'expat' },
     ];
 
-    for (const empName of defaultEmployees) {
-        const empCheck = await pool.query('SELECT id FROM employees WHERE name = $1', [empName]);
-        if (empCheck.rows.length === 0) {
-            await pool.query('INSERT INTO employees (name) VALUES ($1)', [empName]);
+    for (const emp of sampleEmployees) {
+        const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [emp.dept]);
+        if (deptResult.rows.length > 0) {
+            const deptId = deptResult.rows[0].id;
+            await pool.query(
+                `INSERT INTO employees (name, department_id, employee_type) 
+                 VALUES ($1, $2, $3) ON CONFLICT (name, department_id) DO NOTHING`,
+                [emp.name, deptId, emp.type]
+            );
         }
     }
-    console.log('✅ Default employees created');
-
-    // Create user for Pradeep Singh
-    const userCheck = await pool.query('SELECT id FROM users WHERE username = $1', ['Pradeep Singh']);
-    if (userCheck.rows.length === 0) {
-        await pool.query(
-            'INSERT INTO users (username, password, role) VALUES ($1, $2, $3)',
-            ['Pradeep Singh', 'user123', 'user']
-        );
-        console.log('✅ Default user created');
-    }
+    console.log('✅ Sample employees created');
 }
 
 // =============================================
@@ -156,8 +200,7 @@ app.get('/api/test', (req, res) => {
         success: true, 
         message: 'Server is running!',
         timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || 'development',
-        database_configured: true
+        environment: process.env.NODE_ENV || 'development'
     });
 });
 
@@ -174,6 +217,52 @@ app.get('/api/db-test', async (req, res) => {
             success: false,
             error: error.message
         });
+    }
+});
+
+// =============================================
+// DEPARTMENT ROUTES
+// =============================================
+
+// Get all departments
+app.get('/api/departments', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM departments ORDER BY name');
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error fetching departments:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Add department
+app.post('/api/departments', async (req, res) => {
+    const { name } = req.body;
+    
+    try {
+        await pool.query('INSERT INTO departments (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [name]);
+        res.json({ success: true, message: `Department "${name}" added!` });
+    } catch (error) {
+        console.error('Error adding department:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete department
+app.delete('/api/departments/:name', async (req, res) => {
+    const { name } = req.params;
+    
+    try {
+        const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [name]);
+        if (deptResult.rows.length > 0) {
+            const deptId = deptResult.rows[0].id;
+            await pool.query('DELETE FROM employees WHERE department_id = $1', [deptId]);
+            await pool.query('DELETE FROM departments WHERE id = $1', [deptId]);
+        }
+        res.json({ success: true, message: `Department "${name}" deleted!` });
+    } catch (error) {
+        console.error('Error deleting department:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -200,7 +289,8 @@ app.post('/api/login', async (req, res) => {
                 user: {
                     id: user.id,
                     username: user.username,
-                    role: user.role
+                    role: user.role,
+                    can_manage_users: user.can_manage_users
                 }
             });
         } else {
@@ -222,7 +312,9 @@ app.post('/api/login', async (req, res) => {
 // Get all users
 app.get('/api/users', async (req, res) => {
     try {
-        const result = await pool.query('SELECT id, username, role, created_at FROM users ORDER BY username');
+        const result = await pool.query(
+            'SELECT id, username, role, can_manage_users, created_at FROM users ORDER BY username'
+        );
         res.json(result.rows);
     } catch (error) {
         console.error('Error fetching users:', error);
@@ -232,7 +324,7 @@ app.get('/api/users', async (req, res) => {
 
 // Add new user
 app.post('/api/users', async (req, res) => {
-    const { username, password, role } = req.body;
+    const { username, password, role, can_manage_users } = req.body;
     
     try {
         const existing = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
@@ -240,32 +332,16 @@ app.post('/api/users', async (req, res) => {
             return res.status(400).json({ error: 'Username already exists' });
         }
         
-        let employee = await pool.query('SELECT id FROM employees WHERE name = $1', [username]);
-        let employeeCreated = false;
-        
-        if (employee.rows.length === 0) {
-            const newEmployee = await pool.query(
-                'INSERT INTO employees (name) VALUES ($1) RETURNING id',
-                [username]
-            );
-            employee = newEmployee;
-            employeeCreated = true;
-            console.log(`✅ Auto-created employee: ${username}`);
-        }
-        
         const result = await pool.query(
-            'INSERT INTO users (username, password, role) VALUES ($1, $2, $3) RETURNING id, username, role',
-            [username, password || 'user123', role || 'user']
+            `INSERT INTO users (username, password, role, can_manage_users) 
+             VALUES ($1, $2, $3, $4) RETURNING id, username, role, can_manage_users`,
+            [username, password || 'user123', role || 'user', can_manage_users || false]
         );
-        
-        const message = employeeCreated 
-            ? `User "${username}" added successfully! Employee auto-created.` 
-            : `User "${username}" added successfully!`;
         
         res.json({ 
             success: true, 
             user: result.rows[0],
-            message: message
+            message: `User "${username}" added successfully!`
         });
     } catch (error) {
         console.error('Error adding user:', error);
@@ -280,17 +356,12 @@ app.put('/api/users/:oldUsername/username', async (req, res) => {
     
     try {
         if (oldUsername === 'admin') {
-            return res.status(400).json({ error: 'Cannot rename admin user' });
+            return res.status(400).json({ error: 'Cannot rename main admin user' });
         }
         
         const existing = await pool.query('SELECT id FROM users WHERE username = $1', [newUsername]);
         if (existing.rows.length > 0) {
             return res.status(400).json({ error: 'Username already exists' });
-        }
-        
-        const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [newUsername]);
-        if (employee.rows.length === 0) {
-            return res.status(400).json({ error: 'Employee not found. Please add employee first.' });
         }
         
         await pool.query('UPDATE users SET username = $1 WHERE username = $2', [newUsername, oldUsername]);
@@ -308,8 +379,8 @@ app.put('/api/users/:username/password', async (req, res) => {
     const { newPassword, currentUser } = req.body;
     
     try {
-        if (currentUser && currentUser.role !== 'admin' && currentUser.username !== username) {
-            return res.status(403).json({ error: 'You can only reset your own password' });
+        if (currentUser && currentUser.role !== 'admin' && !currentUser.can_manage_users && currentUser.username !== username) {
+            return res.status(403).json({ error: 'You do not have permission to reset passwords' });
         }
         
         await pool.query('UPDATE users SET password = $1 WHERE username = $2', [newPassword, username]);
@@ -321,17 +392,20 @@ app.put('/api/users/:username/password', async (req, res) => {
     }
 });
 
-// Update user role
+// Update user role & permissions
 app.put('/api/users/:username', async (req, res) => {
     const { username } = req.params;
-    const { role } = req.body;
+    const { role, can_manage_users } = req.body;
     
     try {
         if (username === 'admin') {
-            return res.status(400).json({ error: 'Cannot change admin role' });
+            return res.status(400).json({ error: 'Cannot change main admin' });
         }
         
-        await pool.query('UPDATE users SET role = $1 WHERE username = $2', [role, username]);
+        await pool.query(
+            'UPDATE users SET role = $1, can_manage_users = $2 WHERE username = $3',
+            [role, can_manage_users || false, username]
+        );
         res.json({ success: true, message: 'User updated successfully!' });
     } catch (error) {
         console.error('Error updating user:', error);
@@ -345,7 +419,7 @@ app.delete('/api/users/:username', async (req, res) => {
     
     try {
         if (username === 'admin') {
-            return res.status(400).json({ error: 'Cannot delete admin user' });
+            return res.status(400).json({ error: 'Cannot delete main admin user' });
         }
         
         await pool.query('DELETE FROM users WHERE username = $1', [username]);
@@ -360,10 +434,23 @@ app.delete('/api/users/:username', async (req, res) => {
 // EMPLOYEE ROUTES
 // =============================================
 
-// Get all employees
+// Get all employees with department and type
 app.get('/api/employees', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM employees ORDER BY name');
+        const query = `
+            SELECT 
+                e.id,
+                e.name,
+                e.employee_type,
+                e.total_break_allowance,
+                d.name as department,
+                d.id as department_id,
+                e.created_at
+            FROM employees e
+            JOIN departments d ON e.department_id = d.id
+            ORDER BY d.name, e.employee_type, e.name
+        `;
+        const result = await pool.query(query);
         res.json(result.rows);
     } catch (error) {
         console.error('Error in /api/employees:', error);
@@ -371,47 +458,80 @@ app.get('/api/employees', async (req, res) => {
     }
 });
 
-// Add multiple employees
-app.post('/api/employees/bulk', async (req, res) => {
-    const { employees } = req.body;
+// Add employee
+app.post('/api/employees', async (req, res) => {
+    const { name, department, employee_type } = req.body;
     
     try {
-        for (const name of employees) {
-            await pool.query(
-                'INSERT INTO employees (name) VALUES ($1) ON CONFLICT (name) DO NOTHING',
-                [name]
-            );
+        const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [department]);
+        if (deptResult.rows.length === 0) {
+            return res.status(400).json({ error: 'Department not found' });
         }
-        res.json({ success: true, message: 'Employees added successfully!' });
+        
+        const deptId = deptResult.rows[0].id;
+        
+        const existing = await pool.query(
+            'SELECT id FROM employees WHERE name = $1 AND department_id = $2',
+            [name, deptId]
+        );
+        if (existing.rows.length > 0) {
+            return res.status(400).json({ error: 'Employee already exists in this department' });
+        }
+        
+        await pool.query(
+            `INSERT INTO employees (name, department_id, employee_type) 
+             VALUES ($1, $2, $3)`,
+            [name, deptId, employee_type]
+        );
+        
+        res.json({ success: true, message: `Employee "${name}" added successfully!` });
     } catch (error) {
-        console.error('Error in /api/employees/bulk:', error);
+        console.error('Error adding employee:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// Edit employee name
-app.put('/api/employees/:oldName', async (req, res) => {
-    const { oldName } = req.params;
-    const { newName } = req.body;
+// Edit employee
+app.put('/api/employees/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, department, employee_type } = req.body;
     
     try {
-        const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [oldName]);
-        if (employee.rows.length === 0) {
-            return res.status(404).json({ error: 'Employee not found' });
+        let deptId = null;
+        if (department) {
+            const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [department]);
+            if (deptResult.rows.length === 0) {
+                return res.status(400).json({ error: 'Department not found' });
+            }
+            deptId = deptResult.rows[0].id;
         }
         
-        const existing = await pool.query('SELECT id FROM employees WHERE name = $1', [newName]);
-        if (existing.rows.length > 0) {
-            return res.status(400).json({ error: 'Employee name already exists' });
+        let query = 'UPDATE employees SET ';
+        const params = [];
+        let paramCount = 1;
+        
+        if (name) {
+            query += `name = $${paramCount}, `;
+            params.push(name);
+            paramCount++;
+        }
+        if (deptId) {
+            query += `department_id = $${paramCount}, `;
+            params.push(deptId);
+            paramCount++;
+        }
+        if (employee_type) {
+            query += `employee_type = $${paramCount}, `;
+            params.push(employee_type);
+            paramCount++;
         }
         
-        await pool.query('UPDATE employees SET name = $1 WHERE name = $2', [newName, oldName]);
-        await pool.query('UPDATE users SET username = $1 WHERE username = $2', [newName, oldName]);
+        query = query.slice(0, -2);
+        query += ` WHERE id = $${paramCount}`;
+        params.push(id);
         
-        res.json({ 
-            success: true, 
-            message: `Employee renamed from "${oldName}" to "${newName}"`
-        });
+        await pool.query(query, params);
+        res.json({ success: true, message: 'Employee updated successfully!' });
     } catch (error) {
         console.error('Error editing employee:', error);
         res.status(500).json({ error: error.message });
@@ -419,19 +539,12 @@ app.put('/api/employees/:oldName', async (req, res) => {
 });
 
 // Delete employee
-app.delete('/api/employees/:name', async (req, res) => {
-    const { name } = req.params;
+app.delete('/api/employees/:id', async (req, res) => {
+    const { id } = req.params;
     
     try {
-        const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [name]);
-        if (employee.rows.length === 0) {
-            return res.status(404).json({ error: 'Employee not found' });
-        }
-        
-        const employeeId = employee.rows[0].id;
-        await pool.query('DELETE FROM break_log WHERE employee_id = $1', [employeeId]);
-        await pool.query('DELETE FROM employees WHERE id = $1', [employeeId]);
-        
+        await pool.query('DELETE FROM break_log WHERE employee_id = $1', [id]);
+        await pool.query('DELETE FROM employees WHERE id = $1', [id]);
         res.json({ success: true, message: 'Employee deleted successfully!' });
     } catch (error) {
         console.error('Error deleting employee:', error);
@@ -443,21 +556,45 @@ app.delete('/api/employees/:name', async (req, res) => {
 // BREAK ROUTES
 // =============================================
 
-// Get active breaks
+// Get active breaks with employee type and department
 app.get('/api/active-breaks', async (req, res) => {
+    const employeeName = req.query.employeeName;
+    
     try {
-        const query = `
+        let query = `
             SELECT 
+                e.id as employee_id,
                 e.name AS employee_name,
+                e.employee_type,
+                d.name as department,
                 b.id AS break_id,
                 TO_CHAR(b.break_out, 'HH24:MI') AS break_out,
                 TO_CHAR(b.break_date, 'DD Mon YYYY') AS break_date
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
+            JOIN departments d ON e.department_id = d.id
             WHERE b.break_in IS NULL AND b.break_date = CURRENT_DATE
-            ORDER BY b.break_out ASC
         `;
-        const result = await pool.query(query);
+        
+        const params = [];
+        
+        if (employeeName) {
+            const empResult = await pool.query(
+                'SELECT employee_type FROM employees WHERE name = $1',
+                [employeeName]
+            );
+            
+            if (empResult.rows.length > 0) {
+                const empType = empResult.rows[0].employee_type;
+                if (empType === 'expat') {
+                    query += ` AND e.employee_type = 'expat'`;
+                }
+            }
+        }
+        
+        query += ` ORDER BY b.break_out ASC`;
+        
+        const result = await pool.query(query, params);
         res.json(result.rows);
     } catch (error) {
         console.error('Error in /api/active-breaks:', error);
@@ -465,12 +602,17 @@ app.get('/api/active-breaks', async (req, res) => {
     }
 });
 
-// Get break report
+// Get break report with filters
 app.get('/api/break-report', async (req, res) => {
+    const { employeeName, role } = req.query;
+    
     try {
-        const query = `
+        let query = `
             SELECT 
+                e.id as employee_id,
                 e.name AS employee_name,
+                e.employee_type,
+                d.name as department,
                 TO_CHAR(b.break_date, 'DD Mon YYYY') AS break_date,
                 TO_CHAR(b.break_out, 'HH24:MI') AS break_out,
                 CASE 
@@ -487,10 +629,24 @@ app.get('/api/break-report', async (req, res) => {
                 END AS status
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
-            ORDER BY b.break_date DESC, b.break_out DESC
-            LIMIT 1000
+            JOIN departments d ON e.department_id = d.id
+            WHERE 1=1
         `;
-        const result = await pool.query(query);
+        
+        const params = [];
+        let paramCount = 1;
+        
+        if (role !== 'admin' && role !== 'sub-admin') {
+            if (employeeName) {
+                query += ` AND e.name = $${paramCount}`;
+                params.push(employeeName);
+                paramCount++;
+            }
+        }
+        
+        query += ` ORDER BY b.break_date DESC, b.break_out DESC LIMIT 1000`;
+        
+        const result = await pool.query(query, params);
         res.json(result.rows);
     } catch (error) {
         console.error('Error in /api/break-report:', error);
@@ -499,8 +655,8 @@ app.get('/api/break-report', async (req, res) => {
 });
 
 // Get breaks for specific employee
-app.get('/api/breaks/:employeeName', async (req, res) => {
-    const { employeeName } = req.params;
+app.get('/api/breaks/:employeeId', async (req, res) => {
+    const { employeeId } = req.params;
     
     try {
         const query = `
@@ -508,6 +664,8 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
                 SELECT 
                     e.id AS employee_id,
                     e.name AS employee_name,
+                    d.name as department,
+                    e.employee_type,
                     b.id AS break_id,
                     b.break_date,
                     b.break_out,
@@ -528,12 +686,18 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
                     CASE WHEN b.break_in IS NULL THEN true ELSE false END AS is_active
                 FROM break_log b
                 JOIN employees e ON b.employee_id = e.id
-                WHERE e.name = $1
+                JOIN departments d ON e.department_id = d.id
+                WHERE e.id = $1
             )
             SELECT 
                 break_id AS id,
                 TO_CHAR(break_date, 'DD Mon YYYY') AS date,
                 employee_name AS "Employee Name",
+                department AS "Department",
+                CASE 
+                    WHEN employee_type = 'local' THEN '🇱🇰 Local'
+                    ELSE '🌍 Expat'
+                END AS "Type",
                 TO_CHAR(break_out, 'HH24:MI') AS "Break",
                 CASE 
                     WHEN break_in IS NOT NULL THEN TO_CHAR(break_in, 'HH24:MI')
@@ -556,7 +720,7 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
             FROM daily_breaks
             ORDER BY break_date DESC, break_out DESC;
         `;
-        const result = await pool.query(query, [employeeName]);
+        const result = await pool.query(query, [employeeId]);
         res.json(result.rows);
     } catch (error) {
         console.error('Error in /api/breaks:', error);
@@ -573,7 +737,8 @@ app.get('/api/active-break/:employeeName', async (req, res) => {
             SELECT 
                 b.id,
                 b.break_out,
-                b.break_date
+                b.break_date,
+                e.id as employee_id
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
             WHERE e.name = $1 
@@ -597,11 +762,7 @@ app.post('/api/break-out', async (req, res) => {
     try {
         let employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
         if (employee.rows.length === 0) {
-            const newEmp = await pool.query(
-                'INSERT INTO employees (name) VALUES ($1) RETURNING id',
-                [employeeName]
-            );
-            employee = newEmp;
+            return res.status(404).json({ error: 'Employee not found' });
         }
         
         const employeeId = employee.rows[0].id;
@@ -719,8 +880,6 @@ app.get('/api/today/:employeeName', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Open your app in browser`);
-    console.log(`👤 Default Admin: admin / admin123`);
-    console.log(`👤 Default User: Pradeep Singh / user123`);
-    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`📦 Database: PostgreSQL (URL Encoded)`);
+    console.log(`👑 Main Admin: admin / 535680`);
+    console.log(`📦 Database: PostgreSQL`);
 });
