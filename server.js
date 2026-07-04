@@ -142,12 +142,10 @@ async function runAutoMigration() {
         if (parseInt(empCount.rows[0].count) === 0) {
             console.log('🔧 Inserting sample employees...');
             
-            // Get department IDs
             const depts = await client.query('SELECT id, name FROM departments');
             const deptMap = {};
             depts.rows.forEach(d => { deptMap[d.name] = d.id; });
 
-            // Sample employees organized by department with both Local and Expat
             const sampleEmployees = [
                 // ===== Betrealated Department =====
                 { name: 'ABRAHAM SIMANWA', dept: 'Betrealated', type: 'local' },
@@ -158,7 +156,6 @@ async function runAutoMigration() {
                 { name: 'CHONGO KABWE', dept: 'Betrealated', type: 'local' },
                 { name: 'CHIPIO SITONDO', dept: 'Betrealated', type: 'local' },
                 { name: 'DEXTER NSWANA', dept: 'Betrealated', type: 'local' },
-                // Expat in Betrealated
                 { name: 'JOHN SMITH', dept: 'Betrealated', type: 'expat' },
                 { name: 'MICHAEL BROWN', dept: 'Betrealated', type: 'expat' },
                 { name: 'ROBERT TAYLOR', dept: 'Betrealated', type: 'expat' },
@@ -169,7 +166,6 @@ async function runAutoMigration() {
                 { name: 'AYUSH GUPTA', dept: 'Banking', type: 'local' },
                 { name: 'PRIYA PATEL', dept: 'Banking', type: 'local' },
                 { name: 'RAJESH SHARMA', dept: 'Banking', type: 'local' },
-                // Expat in Banking
                 { name: 'DAVID WILSON', dept: 'Banking', type: 'expat' },
                 { name: 'SARAH JOHNSON', dept: 'Banking', type: 'expat' },
                 
@@ -178,7 +174,6 @@ async function runAutoMigration() {
                 { name: 'ANANYA GUPTA', dept: 'CS', type: 'local' },
                 { name: 'SOUVIK NAG', dept: 'CS', type: 'local' },
                 { name: 'CHANDAN GUPTA', dept: 'CS', type: 'local' },
-                // Expat in CS
                 { name: 'JAMES ANDERSON', dept: 'CS', type: 'expat' },
                 { name: 'MARY WILLIAMS', dept: 'CS', type: 'expat' },
                 
@@ -187,7 +182,6 @@ async function runAutoMigration() {
                 { name: 'KAVITA NAIR', dept: 'Checking', type: 'local' },
                 { name: 'LOKENDER SINGH', dept: 'Checking', type: 'local' },
                 { name: 'PUSHKAR KATHIK', dept: 'Checking', type: 'local' },
-                // Expat in Checking
                 { name: 'PETER JONES', dept: 'Checking', type: 'expat' },
                 { name: 'LISA MARTINEZ', dept: 'Checking', type: 'expat' },
             ];
@@ -281,6 +275,7 @@ app.get('/api/db-test', async (req, res) => {
 // DEPARTMENT ROUTES
 // =============================================
 
+// Get all departments
 app.get('/api/departments', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM departments ORDER BY name');
@@ -291,6 +286,7 @@ app.get('/api/departments', async (req, res) => {
     }
 });
 
+// Add department
 app.post('/api/departments', async (req, res) => {
     const { name } = req.body;
     try {
@@ -302,6 +298,7 @@ app.post('/api/departments', async (req, res) => {
     }
 });
 
+// Delete department
 app.delete('/api/departments/:name', async (req, res) => {
     const { name } = req.params;
     try {
@@ -322,6 +319,7 @@ app.delete('/api/departments/:name', async (req, res) => {
 // AUTHENTICATION ROUTES
 // =============================================
 
+// Login
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     console.log('🔐 Login attempt:', username);
@@ -358,6 +356,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
+// Get all users
 app.get('/api/users', async (req, res) => {
     try {
         const result = await pool.query(
@@ -370,6 +369,7 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
+// Add new user
 app.post('/api/users', async (req, res) => {
     const { username, password, role, can_manage_users } = req.body;
     try {
@@ -406,6 +406,7 @@ app.post('/api/users', async (req, res) => {
     }
 });
 
+// Update username
 app.put('/api/users/:oldUsername/username', async (req, res) => {
     const { oldUsername } = req.params;
     const { newUsername } = req.body;
@@ -425,6 +426,7 @@ app.put('/api/users/:oldUsername/username', async (req, res) => {
     }
 });
 
+// Reset password
 app.put('/api/users/:username/password', async (req, res) => {
     const { username } = req.params;
     const { newPassword, currentUser } = req.body;
@@ -440,6 +442,7 @@ app.put('/api/users/:username/password', async (req, res) => {
     }
 });
 
+// Update user role & permissions
 app.put('/api/users/:username', async (req, res) => {
     const { username } = req.params;
     const { role, can_manage_users } = req.body;
@@ -458,6 +461,7 @@ app.put('/api/users/:username', async (req, res) => {
     }
 });
 
+// Delete user
 app.delete('/api/users/:username', async (req, res) => {
     const { username } = req.params;
     try {
@@ -473,7 +477,7 @@ app.delete('/api/users/:username', async (req, res) => {
 });
 
 // =============================================
-// EMPLOYEE ROUTES - WITH DEPARTMENT & TYPE
+// EMPLOYEE ROUTES
 // =============================================
 
 // Get all employees with department and type
@@ -523,7 +527,7 @@ app.get('/api/employees/department/:deptName', async (req, res) => {
     }
 });
 
-// Get employees by type (local or expat)
+// Get employees by type
 app.get('/api/employees/type/:type', async (req, res) => {
     const { type } = req.params;
     try {
@@ -552,7 +556,6 @@ app.post('/api/employees', async (req, res) => {
     console.log('📝 Adding employee:', { name, department, employee_type });
     
     try {
-        // Check if department exists
         const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [department]);
         if (deptResult.rows.length === 0) {
             return res.status(400).json({ error: 'Department not found' });
@@ -560,7 +563,6 @@ app.post('/api/employees', async (req, res) => {
         
         const deptId = deptResult.rows[0].id;
         
-        // Check if employee already exists in this department
         const existing = await pool.query(
             'SELECT id FROM employees WHERE name = $1 AND department_id = $2',
             [name, deptId]
@@ -569,7 +571,6 @@ app.post('/api/employees', async (req, res) => {
             return res.status(400).json({ error: 'Employee already exists in this department' });
         }
         
-        // Insert employee
         await pool.query(
             `INSERT INTO employees (name, department_id, employee_type) 
              VALUES ($1, $2, $3)`,
@@ -580,6 +581,46 @@ app.post('/api/employees', async (req, res) => {
         res.json({ success: true, message: `Employee "${name}" added successfully!` });
     } catch (error) {
         console.error('Error adding employee:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Edit employee
+app.put('/api/employees/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, department, employee_type } = req.body;
+    
+    try {
+        const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [department]);
+        if (deptResult.rows.length === 0) {
+            return res.status(400).json({ error: 'Department not found' });
+        }
+        const deptId = deptResult.rows[0].id;
+        
+        const existing = await pool.query(
+            'SELECT id FROM employees WHERE name = $1 AND department_id = $2 AND id != $3',
+            [name, deptId, id]
+        );
+        if (existing.rows.length > 0) {
+            return res.status(400).json({ error: 'Employee already exists in this department' });
+        }
+        
+        await pool.query(
+            `UPDATE employees 
+             SET name = $1, department_id = $2, employee_type = $3 
+             WHERE id = $4`,
+            [name, deptId, employee_type, id]
+        );
+        
+        // Also update username if user exists with this name
+        await pool.query(
+            `UPDATE users SET username = $1 WHERE username = $2`,
+            [name, name]
+        );
+        
+        res.json({ success: true, message: 'Employee updated successfully!' });
+    } catch (error) {
+        console.error('Error updating employee:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -598,10 +639,10 @@ app.delete('/api/employees/:id', async (req, res) => {
 });
 
 // =============================================
-// BREAK ROUTES - FIXED
+// BREAK ROUTES
 // =============================================
 
-// Get active breaks - returns currently on break employees
+// Get active breaks
 app.get('/api/active-breaks', async (req, res) => {
     try {
         const query = `
@@ -627,7 +668,7 @@ app.get('/api/active-breaks', async (req, res) => {
     }
 });
 
-// Get breaks for specific employee - FIXED to use name
+// Get breaks for specific employee
 app.get('/api/breaks/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     console.log('📊 Fetching breaks for:', employeeName);
@@ -700,7 +741,6 @@ app.post('/api/break-out', async (req, res) => {
     console.log('🔴 Break Out:', employeeName, breakDate, breakOut);
     
     try {
-        // Get employee
         const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
         if (employee.rows.length === 0) {
             return res.status(404).json({ error: 'Employee not found' });
@@ -708,7 +748,6 @@ app.post('/api/break-out', async (req, res) => {
         
         const employeeId = employee.rows[0].id;
         
-        // Check if already on break
         const activeBreak = await pool.query(
             `SELECT id FROM break_log 
              WHERE employee_id = $1 AND break_in IS NULL`,
@@ -721,7 +760,6 @@ app.post('/api/break-out', async (req, res) => {
             });
         }
         
-        // Insert break
         await pool.query(
             `INSERT INTO break_log (employee_id, break_date, break_out) 
              VALUES ($1, $2, $3)`,
@@ -745,7 +783,6 @@ app.post('/api/break-in', async (req, res) => {
     console.log('🟢 Break In:', employeeName, breakDate, breakIn);
     
     try {
-        // Get employee
         const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
         if (employee.rows.length === 0) {
             return res.status(404).json({ error: 'Employee not found' });
@@ -753,7 +790,6 @@ app.post('/api/break-in', async (req, res) => {
         
         const employeeId = employee.rows[0].id;
         
-        // Get active break
         const activeBreak = await pool.query(
             `SELECT id FROM break_log 
              WHERE employee_id = $1 AND break_in IS NULL
@@ -769,8 +805,6 @@ app.post('/api/break-in', async (req, res) => {
         }
         
         const breakId = activeBreak.rows[0].id;
-        
-        // Update break
         await pool.query(`UPDATE break_log SET break_in = $1 WHERE id = $2`, [breakIn, breakId]);
         
         console.log('✅ Break ended for:', employeeName);
