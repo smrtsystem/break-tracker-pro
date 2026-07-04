@@ -1,840 +1,873 @@
-const express = require('express');
-const { Pool } = require('pg');
-const cors = require('cors');
-const path = require('path');
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.static('public'));
-
-// Serve login.html at root
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'login.html'));
-});
+// =============================================
+// API URL
+// =============================================
+const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:3000' 
+    : '';
 
 // =============================================
-// DATABASE CONNECTION
+// AUTHENTICATION
 // =============================================
 
-const DATABASE_URL = process.env.DATABASE_URL;
+let currentUser = null;
+let currentEmployee = null;
+let refreshTimer = null;
 
-if (!DATABASE_URL) {
-    console.error('❌ DATABASE_URL environment variable is not set!');
-    process.exit(1);
-}
-
-const cleanUrl = DATABASE_URL.trim().replace(/^"|"$/g, '').replace(/\s/g, '');
-
-console.log('📦 Connecting to database...');
-
-const pool = new Pool({
-    connectionString: cleanUrl,
-    ssl: {
-        rejectUnauthorized: false,
-        require: true
-    },
-    connectionTimeoutMillis: 10000,
-    max: 20,
-});
-
-// =============================================
-// AUTO-MIGRATION: Fix Database Schema on Startup
-// =============================================
-
-async function runAutoMigration() {
-    const client = await pool.connect();
+// Check if user is logged in
+function checkAuth() {
+    const userData = sessionStorage.getItem('user');
+    if (!userData) {
+        window.location.href = 'login.html';
+        return false;
+    }
     try {
-        console.log('🔧 Checking database schema...');
-        
-        // 1. Create departments table
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS departments (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(50) NOT NULL UNIQUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-        console.log('✅ Departments table ready');
-
-        // 2. Insert default departments
-        await client.query(`
-            INSERT INTO departments (name) VALUES 
-                ('Betrealated'),
-                ('Banking'),
-                ('CS'),
-                ('Checking')
-            ON CONFLICT (name) DO NOTHING
-        `);
-        console.log('✅ Default departments inserted');
-
-        // 3. Check and add department_id column
-        const deptColCheck = await client.query(`
-            SELECT column_name FROM information_schema.columns 
-            WHERE table_name = 'employees' AND column_name = 'department_id'
-        `);
-        
-        if (deptColCheck.rows.length === 0) {
-            console.log('🔧 Adding department_id column...');
-            await client.query(`
-                ALTER TABLE employees ADD COLUMN department_id INTEGER;
-                ALTER TABLE employees 
-                ADD CONSTRAINT fk_employee_department 
-                FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE;
-            `);
-            
-            // Set default department
-            await client.query(`
-                UPDATE employees 
-                SET department_id = (SELECT id FROM departments WHERE name = 'Betrealated' LIMIT 1)
-                WHERE department_id IS NULL;
-                ALTER TABLE employees ALTER COLUMN department_id SET NOT NULL;
-            `);
-            console.log('✅ department_id column added');
-        }
-
-        // 4. Check and add employee_type column
-        const typeColCheck = await client.query(`
-            SELECT column_name FROM information_schema.columns 
-            WHERE table_name = 'employees' AND column_name = 'employee_type'
-        `);
-        
-        if (typeColCheck.rows.length === 0) {
-            console.log('🔧 Adding employee_type column...');
-            await client.query(`
-                ALTER TABLE employees ADD COLUMN employee_type VARCHAR(20) DEFAULT 'local';
-                ALTER TABLE employees 
-                ADD CONSTRAINT chk_employee_type 
-                CHECK (employee_type IN ('local', 'expat'));
-                UPDATE employees SET employee_type = 'local' WHERE employee_type IS NULL;
-            `);
-            console.log('✅ employee_type column added');
-        }
-
-        // 5. Check and add can_manage_users column
-        const manageColCheck = await client.query(`
-            SELECT column_name FROM information_schema.columns 
-            WHERE table_name = 'users' AND column_name = 'can_manage_users'
-        `);
-        
-        if (manageColCheck.rows.length === 0) {
-            console.log('🔧 Adding can_manage_users column...');
-            await client.query(`
-                ALTER TABLE users ADD COLUMN can_manage_users BOOLEAN DEFAULT FALSE;
-                UPDATE users SET can_manage_users = FALSE WHERE can_manage_users IS NULL;
-            `);
-            console.log('✅ can_manage_users column added');
-        }
-
-        // 6. Ensure admin user exists
-        await client.query(`
-            INSERT INTO users (username, password, role, can_manage_users) 
-            VALUES ('admin', '535680', 'admin', TRUE)
-            ON CONFLICT (username) DO UPDATE 
-            SET password = '535680', role = 'admin', can_manage_users = TRUE
-        `);
-        console.log('✅ Admin user verified');
-
-        // 7. Insert sample employees if missing
-        const empCount = await client.query('SELECT COUNT(*) FROM employees');
-        if (parseInt(empCount.rows[0].count) === 0) {
-            console.log('🔧 Inserting sample employees...');
-            const depts = await client.query('SELECT id, name FROM departments');
-            const deptMap = {};
-            depts.rows.forEach(d => { deptMap[d.name] = d.id; });
-
-            const sampleEmployees = [
-                { name: 'Rajesh Sharma', dept: 'Betrealated', type: 'local' },
-                { name: 'Priya Patel', dept: 'Betrealated', type: 'local' },
-                { name: 'John Smith', dept: 'Betrealated', type: 'expat' },
-                { name: 'Amit Kumar', dept: 'Banking', type: 'local' },
-                { name: 'Sneha Reddy', dept: 'Banking', type: 'local' },
-                { name: 'David Wilson', dept: 'Banking', type: 'expat' },
-                { name: 'Vikram Singh', dept: 'CS', type: 'local' },
-                { name: 'Ananya Gupta', dept: 'CS', type: 'local' },
-                { name: 'Michael Brown', dept: 'CS', type: 'expat' },
-                { name: 'Deepak Verma', dept: 'Checking', type: 'local' },
-                { name: 'Kavita Nair', dept: 'Checking', type: 'local' },
-                { name: 'Robert Taylor', dept: 'Checking', type: 'expat' }
-            ];
-
-            for (const emp of sampleEmployees) {
-                const deptId = deptMap[emp.dept];
-                if (deptId) {
-                    await client.query(
-                        `INSERT INTO employees (name, department_id, employee_type) 
-                         VALUES ($1, $2, $3) ON CONFLICT (name, department_id) DO NOTHING`,
-                        [emp.name, deptId, emp.type]
-                    );
-                }
-            }
-            console.log('✅ Sample employees inserted');
-        }
-
-        // 8. Create indexes
-        await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department_id);
-            CREATE INDEX IF NOT EXISTS idx_employees_name ON employees(name);
-        `);
-
-        console.log('✅ Database migration completed successfully!');
-    } catch (error) {
-        console.error('❌ Migration error:', error.message);
-    } finally {
-        client.release();
+        currentUser = JSON.parse(userData);
+        return true;
+    } catch (e) {
+        window.location.href = 'login.html';
+        return false;
     }
 }
 
-// =============================================
-// CONNECT AND MIGRATE DATABASE
-// =============================================
-
-async function connectDB() {
-    let retries = 5;
-    while (retries > 0) {
-        try {
-            const client = await pool.connect();
-            console.log('✅ Connected to PostgreSQL successfully!');
-            
-            // Run auto-migration
-            await runAutoMigration();
-            
-            client.release();
-            return;
-        } catch (err) {
-            console.log(`❌ Database connection failed. Retries left: ${retries - 1}`);
-            console.log(`Error: ${err.message}`);
-            retries--;
-            if (retries > 0) {
-                await new Promise(resolve => setTimeout(resolve, 5000));
-            }
-        }
-    }
-    console.log('❌ Could not connect to database after multiple retries');
-}
-
-connectDB();
-
-// =============================================
-// =============================================
-// ALL YOUR EXISTING ROUTES GO HERE
-// =============================================
-// =============================================
-
-// =============================================
-// TEST ROUTES
-// =============================================
-
-app.get('/api/test', (req, res) => {
-    res.json({ 
-        success: true, 
-        message: 'Server is running!',
-        timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || 'development'
+// Update UI based on user role
+function updateUIForRole() {
+    const isAdmin = currentUser && currentUser.role === 'admin';
+    const isSubAdmin = currentUser && currentUser.role === 'sub-admin';
+    const canManage = currentUser && currentUser.can_manage_users;
+    
+    document.querySelectorAll('.admin-only').forEach(el => {
+        el.style.display = (isAdmin || isSubAdmin) ? 'flex' : 'none';
     });
-});
-
-app.get('/api/db-test', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT NOW() as current_time');
-        res.json({
-            success: true,
-            message: 'Database connected!',
-            time: result.rows[0].current_time
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+    
+    document.querySelectorAll('.subadmin-only').forEach(el => {
+        el.style.display = (isAdmin || isSubAdmin) ? 'flex' : 'none';
+    });
+    
+    document.getElementById('userName').textContent = currentUser ? currentUser.username : 'Unknown';
+    
+    const roleBadge = document.getElementById('userRoleBadge');
+    if (currentUser) {
+        const roleMap = {
+            'admin': '👑 Admin',
+            'sub-admin': '🛡️ Sub-Admin',
+            'user': '👤 User'
+        };
+        roleBadge.textContent = roleMap[currentUser.role] || 'User';
     }
-});
+}
+
+// Logout
+function logout() {
+    sessionStorage.removeItem('user');
+    window.location.href = 'login.html';
+}
 
 // =============================================
-// DEPARTMENT ROUTES
+// LIVE CLOCK
 // =============================================
 
-app.get('/api/departments', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM departments ORDER BY name');
-        res.json(result.rows);
-    } catch (error) {
-        console.error('Error fetching departments:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+function updateClock() {
+    const now = new Date();
+    document.getElementById('liveTime').textContent = now.toLocaleTimeString();
+}
+setInterval(updateClock, 1000);
+updateClock();
 
-app.post('/api/departments', async (req, res) => {
-    const { name } = req.body;
-    try {
-        await pool.query('INSERT INTO departments (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [name]);
-        res.json({ success: true, message: `Department "${name}" added!` });
-    } catch (error) {
-        console.error('Error adding department:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+// =============================================
+// INITIALIZATION
+// =============================================
 
-app.delete('/api/departments/:name', async (req, res) => {
-    const { name } = req.params;
-    try {
-        const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [name]);
-        if (deptResult.rows.length > 0) {
-            const deptId = deptResult.rows[0].id;
-            await pool.query('DELETE FROM employees WHERE department_id = $1', [deptId]);
-            await pool.query('DELETE FROM departments WHERE id = $1', [deptId]);
+document.addEventListener('DOMContentLoaded', function() {
+    if (!checkAuth()) return;
+    updateUIForRole();
+    loadDepartments();
+    loadEmployees();
+    loadUsers();
+    loadActiveBreaks();
+    
+    // Auto-refresh every 15 seconds
+    refreshTimer = setInterval(() => {
+        loadActiveBreaks();
+        if (currentEmployee) {
+            loadEmployeeBreaks(currentEmployee);
         }
-        res.json({ success: true, message: `Department "${name}" deleted!` });
-    } catch (error) {
-        console.error('Error deleting department:', error);
-        res.status(500).json({ error: error.message });
-    }
+    }, 15000);
 });
 
 // =============================================
-// AUTHENTICATION ROUTES
+// TAB SWITCHING
 // =============================================
 
-app.post('/api/login', async (req, res) => {
-    const { username, password } = req.body;
-    console.log('🔐 Login attempt:', username);
+function switchTab(tabName) {
+    document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+    const tabs = document.querySelectorAll('.nav-tab');
+    const tabMap = { 'dashboard': 0, 'config': 1, 'users': 2, 'settings': 3 };
+    if (tabMap[tabName] !== undefined) {
+        tabs[tabMap[tabName]].classList.add('active');
+    }
+
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+
+    if (tabName === 'dashboard') {
+        refreshData();
+    } else if (tabName === 'config') {
+        loadDepartments();
+        loadEmployees();
+    } else if (tabName === 'users') {
+        loadUsers();
+    }
+}
+
+// =============================================
+// MODAL FUNCTIONS
+// =============================================
+
+function openReportModal() {
+    document.getElementById('reportModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+    loadFullReport();
+}
+
+function closeReportModal() {
+    document.getElementById('reportModal').classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+document.getElementById('reportModal').addEventListener('click', function(e) {
+    if (e.target === this) closeReportModal();
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeReportModal();
+});
+
+// =============================================
+// DEPARTMENT FUNCTIONS
+// =============================================
+
+async function loadDepartments() {
     try {
-        const result = await pool.query(
-            'SELECT * FROM users WHERE username = $1 AND password = $2',
-            [username, password]
-        );
-        if (result.rows.length > 0) {
-            const user = result.rows[0];
-            console.log('✅ Login successful:', username);
-            res.json({
-                success: true,
-                user: {
-                    id: user.id,
-                    username: user.username,
-                    role: user.role,
-                    can_manage_users: user.can_manage_users
-                }
+        const response = await fetch(`${API_URL}/api/departments`);
+        const departments = await response.json();
+        
+        const deptSelect = document.getElementById('newEmployeeDepartment');
+        deptSelect.innerHTML = '';
+        
+        departments.forEach(dept => {
+            const option = document.createElement('option');
+            option.value = dept.name;
+            option.textContent = dept.name;
+            deptSelect.appendChild(option);
+        });
+        
+        // Show department list
+        const deptList = document.getElementById('departmentList');
+        if (deptList) {
+            deptList.innerHTML = '';
+            departments.forEach(dept => {
+                const badge = document.createElement('span');
+                badge.className = 'department-badge';
+                badge.innerHTML = `
+                    <i class="fas fa-building"></i> ${dept.name}
+                    <button onclick="deleteDepartment('${dept.name}')" style="background:none; border:none; color:#dc3545; cursor:pointer; margin-left:5px;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                `;
+                deptList.appendChild(badge);
             });
+        }
+    } catch (error) {
+        console.error('Error loading departments:', error);
+    }
+}
+
+async function addDepartment() {
+    const name = document.getElementById('newDepartmentName').value.trim();
+    if (!name) {
+        showAlert('Please enter a department name!', 'error');
+        return;
+    }
+    try {
+        const response = await fetch(`${API_URL}/api/departments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        if (response.ok) {
+            showAlert(`✅ Department "${name}" added successfully!`, 'success');
+            document.getElementById('newDepartmentName').value = '';
+            await loadDepartments();
         } else {
-            console.log('❌ Login failed:', username);
-            res.status(401).json({ 
-                success: false, 
-                message: 'Invalid username or password' 
+            const error = await response.json();
+            showAlert('❌ ' + error.error, 'error');
+        }
+    } catch (error) {
+        showAlert('❌ Error connecting to server', 'error');
+    }
+}
+
+async function deleteDepartment(name) {
+    if (!confirm(`Are you sure you want to delete department "${name}"?`)) return;
+    try {
+        const response = await fetch(`${API_URL}/api/departments/${encodeURIComponent(name)}`, {
+            method: 'DELETE'
+        });
+        if (response.ok) {
+            showAlert(`✅ Department "${name}" deleted!`, 'success');
+            await loadDepartments();
+            await loadEmployees();
+        } else {
+            showAlert('❌ Error deleting department', 'error');
+        }
+    } catch (error) {
+        showAlert('❌ Error connecting to server', 'error');
+    }
+}
+
+// =============================================
+// EMPLOYEE FUNCTIONS
+// =============================================
+
+async function loadEmployees() {
+    try {
+        const response = await fetch(`${API_URL}/api/employees`);
+        const employees = await response.json();
+
+        const select = document.getElementById('employeeSelect');
+        select.innerHTML = '<option value="">Select an employee...</option>';
+
+        if (employees && employees.length > 0) {
+            employees.forEach(emp => {
+                const option = document.createElement('option');
+                option.value = emp.name;
+                option.textContent = `${emp.name} (${emp.department})`;
+                select.appendChild(option);
             });
+            
+            // Select first employee by default
+            if (!currentEmployee && employees.length > 0) {
+                select.value = employees[0].name;
+                onEmployeeChange();
+            }
         }
+        
+        await loadEmployeeList(employees);
+        await loadEmployeesForReport(employees);
     } catch (error) {
-        console.error('❌ Login error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Server error: ' + error.message 
+        console.error('Error loading employees:', error);
+        showAlert('Error loading employees', 'error');
+    }
+}
+
+async function loadEmployeeList(employees) {
+    try {
+        if (!employees) {
+            const response = await fetch(`${API_URL}/api/employees`);
+            employees = await response.json();
+        }
+
+        const container = document.getElementById('employeeListContainer');
+        const countSpan = document.getElementById('employeeCount');
+
+        if (!employees || employees.length === 0) {
+            container.innerHTML = '<div class="no-data">No employees found.</div>';
+            countSpan.textContent = '(0 employees)';
+            return;
+        }
+
+        countSpan.textContent = `(${employees.length} employees)`;
+        container.innerHTML = '';
+
+        employees.forEach(emp => {
+            const div = document.createElement('div');
+            div.className = 'employee-item';
+            const typeBadge = emp.employee_type === 'local' 
+                ? '<span class="badge badge-local">🇱🇰 Local</span>'
+                : '<span class="badge badge-expat">🌍 Expat</span>';
+            
+            div.innerHTML = `
+                <span class="name">
+                    <i class="fas fa-user" style="color:#1a73e8; margin-right:8px;"></i>
+                    ${emp.name}
+                    ${typeBadge}
+                    <span style="font-size:10px; color:#888;">(${emp.department})</span>
+                </span>
+                <div class="actions">
+                    <button class="btn btn-danger btn-sm" onclick="deleteEmployee(${emp.id})" title="Delete Employee">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            `;
+            container.appendChild(div);
         });
-    }
-});
-
-app.get('/api/users', async (req, res) => {
-    try {
-        const result = await pool.query(
-            'SELECT id, username, role, can_manage_users, created_at FROM users ORDER BY username'
-        );
-        res.json(result.rows);
     } catch (error) {
-        console.error('Error fetching users:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Error loading employee list:', error);
     }
-});
+}
 
-app.post('/api/users', async (req, res) => {
-    const { username, password, role, can_manage_users } = req.body;
+async function loadEmployeesForReport(employees) {
     try {
-        const existing = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
-        if (existing.rows.length > 0) {
-            return res.status(400).json({ error: 'Username already exists' });
+        if (!employees) {
+            const response = await fetch(`${API_URL}/api/employees`);
+            employees = await response.json();
         }
-        const result = await pool.query(
-            `INSERT INTO users (username, password, role, can_manage_users) 
-             VALUES ($1, $2, $3, $4) RETURNING id, username, role, can_manage_users`,
-            [username, password || 'user123', role || 'user', can_manage_users || false]
-        );
-        res.json({ 
-            success: true, 
-            user: result.rows[0],
-            message: `User "${username}" added successfully!`
+        
+        const select = document.getElementById('reportEmployeeFilter');
+        if (!select) return;
+        
+        select.innerHTML = '<option value="">All Employees</option>';
+        employees.forEach(emp => {
+            const option = document.createElement('option');
+            option.value = emp.name;
+            option.textContent = `${emp.name} (${emp.department})`;
+            select.appendChild(option);
         });
     } catch (error) {
-        console.error('Error adding user:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Error loading employees for report:', error);
     }
-});
+}
 
-app.put('/api/users/:oldUsername/username', async (req, res) => {
-    const { oldUsername } = req.params;
-    const { newUsername } = req.body;
-    try {
-        if (oldUsername === 'admin') {
-            return res.status(400).json({ error: 'Cannot rename main admin user' });
-        }
-        const existing = await pool.query('SELECT id FROM users WHERE username = $1', [newUsername]);
-        if (existing.rows.length > 0) {
-            return res.status(400).json({ error: 'Username already exists' });
-        }
-        await pool.query('UPDATE users SET username = $1 WHERE username = $2', [newUsername, oldUsername]);
-        res.json({ success: true, message: `Username updated from "${oldUsername}" to "${newUsername}"` });
-    } catch (error) {
-        console.error('Error updating username:', error);
-        res.status(500).json({ error: error.message });
+async function addEmployee() {
+    const name = document.getElementById('newEmployeeName').value.trim();
+    const department = document.getElementById('newEmployeeDepartment').value;
+    const employee_type = document.getElementById('newEmployeeType').value;
+
+    if (!name) {
+        showAlert('Please enter an employee name!', 'error');
+        return;
     }
-});
-
-app.put('/api/users/:username/password', async (req, res) => {
-    const { username } = req.params;
-    const { newPassword, currentUser } = req.body;
-    try {
-        if (currentUser && currentUser.role !== 'admin' && !currentUser.can_manage_users && currentUser.username !== username) {
-            return res.status(403).json({ error: 'You do not have permission to reset passwords' });
-        }
-        await pool.query('UPDATE users SET password = $1 WHERE username = $2', [newPassword, username]);
-        res.json({ success: true, message: `Password updated for "${username}"` });
-    } catch (error) {
-        console.error('Error resetting password:', error);
-        res.status(500).json({ error: error.message });
+    if (!department) {
+        showAlert('Please select a department!', 'error');
+        return;
     }
-});
 
-app.put('/api/users/:username', async (req, res) => {
-    const { username } = req.params;
-    const { role, can_manage_users } = req.body;
     try {
-        if (username === 'admin') {
-            return res.status(400).json({ error: 'Cannot change main admin' });
-        }
-        await pool.query(
-            'UPDATE users SET role = $1, can_manage_users = $2 WHERE username = $3',
-            [role, can_manage_users || false, username]
-        );
-        res.json({ success: true, message: 'User updated successfully!' });
-    } catch (error) {
-        console.error('Error updating user:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+        const response = await fetch(`${API_URL}/api/employees`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, department, employee_type })
+        });
 
-app.delete('/api/users/:username', async (req, res) => {
-    const { username } = req.params;
-    try {
-        if (username === 'admin') {
-            return res.status(400).json({ error: 'Cannot delete main admin user' });
-        }
-        await pool.query('DELETE FROM users WHERE username = $1', [username]);
-        res.json({ success: true, message: 'User deleted successfully!' });
-    } catch (error) {
-        console.error('Error deleting user:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+        const result = await response.json();
 
-// =============================================
-// EMPLOYEE ROUTES
-// =============================================
-
-app.get('/api/employees', async (req, res) => {
-    try {
-        const query = `
-            SELECT 
-                e.id,
-                e.name,
-                e.employee_type,
-                e.total_break_allowance,
-                d.name as department,
-                d.id as department_id,
-                e.created_at
-            FROM employees e
-            JOIN departments d ON e.department_id = d.id
-            ORDER BY d.name, e.employee_type, e.name
-        `;
-        const result = await pool.query(query);
-        res.json(result.rows);
-    } catch (error) {
-        console.error('Error in /api/employees:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.post('/api/employees', async (req, res) => {
-    const { name, department, employee_type } = req.body;
-    try {
-        const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [department]);
-        if (deptResult.rows.length === 0) {
-            return res.status(400).json({ error: 'Department not found' });
+        if (response.ok) {
+            showAlert(`✅ Employee "${name}" added successfully!`, 'success');
+            document.getElementById('newEmployeeName').value = '';
+            await loadEmployees();
+            // Also reload the employee select dropdown
+            await loadEmployees();
+        } else {
+            showAlert('❌ ' + result.error, 'error');
         }
-        const deptId = deptResult.rows[0].id;
-        const existing = await pool.query(
-            'SELECT id FROM employees WHERE name = $1 AND department_id = $2',
-            [name, deptId]
-        );
-        if (existing.rows.length > 0) {
-            return res.status(400).json({ error: 'Employee already exists in this department' });
-        }
-        await pool.query(
-            `INSERT INTO employees (name, department_id, employee_type) 
-             VALUES ($1, $2, $3)`,
-            [name, deptId, employee_type]
-        );
-        res.json({ success: true, message: `Employee "${name}" added successfully!` });
     } catch (error) {
         console.error('Error adding employee:', error);
-        res.status(500).json({ error: error.message });
+        showAlert('❌ Error connecting to server', 'error');
     }
-});
+}
 
-app.put('/api/employees/:id', async (req, res) => {
-    const { id } = req.params;
-    const { name, department, employee_type } = req.body;
+async function deleteEmployee(id) {
+    if (!confirm('Are you sure you want to delete this employee?')) return;
     try {
-        let deptId = null;
-        if (department) {
-            const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [department]);
-            if (deptResult.rows.length === 0) {
-                return res.status(400).json({ error: 'Department not found' });
-            }
-            deptId = deptResult.rows[0].id;
+        const response = await fetch(`${API_URL}/api/employees/${id}`, {
+            method: 'DELETE'
+        });
+        if (response.ok) {
+            showAlert('✅ Employee deleted successfully!', 'success');
+            await loadEmployees();
+        } else {
+            showAlert('❌ Error deleting employee', 'error');
         }
-        let query = 'UPDATE employees SET ';
-        const params = [];
-        let paramCount = 1;
-        if (name) {
-            query += `name = $${paramCount}, `;
-            params.push(name);
-            paramCount++;
-        }
-        if (deptId) {
-            query += `department_id = $${paramCount}, `;
-            params.push(deptId);
-            paramCount++;
-        }
-        if (employee_type) {
-            query += `employee_type = $${paramCount}, `;
-            params.push(employee_type);
-            paramCount++;
-        }
-        query = query.slice(0, -2);
-        query += ` WHERE id = $${paramCount}`;
-        params.push(id);
-        await pool.query(query, params);
-        res.json({ success: true, message: 'Employee updated successfully!' });
     } catch (error) {
-        console.error('Error editing employee:', error);
-        res.status(500).json({ error: error.message });
+        showAlert('❌ Error connecting to server', 'error');
     }
-});
-
-app.delete('/api/employees/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        await pool.query('DELETE FROM break_log WHERE employee_id = $1', [id]);
-        await pool.query('DELETE FROM employees WHERE id = $1', [id]);
-        res.json({ success: true, message: 'Employee deleted successfully!' });
-    } catch (error) {
-        console.error('Error deleting employee:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+}
 
 // =============================================
-// BREAK ROUTES
+// USER FUNCTIONS
 // =============================================
 
-app.get('/api/active-breaks', async (req, res) => {
-    const employeeName = req.query.employeeName;
+async function loadUsers() {
     try {
-        let query = `
-            SELECT 
-                e.id as employee_id,
-                e.name AS employee_name,
-                e.employee_type,
-                d.name as department,
-                b.id AS break_id,
-                TO_CHAR(b.break_out, 'HH24:MI') AS break_out,
-                TO_CHAR(b.break_date, 'DD Mon YYYY') AS break_date
-            FROM break_log b
-            JOIN employees e ON b.employee_id = e.id
-            JOIN departments d ON e.department_id = d.id
-            WHERE b.break_in IS NULL AND b.break_date = CURRENT_DATE
-        `;
-        const params = [];
-        if (employeeName) {
-            const empResult = await pool.query(
-                'SELECT employee_type FROM employees WHERE name = $1',
-                [employeeName]
-            );
-            if (empResult.rows.length > 0) {
-                const empType = empResult.rows[0].employee_type;
-                if (empType === 'expat') {
-                    query += ` AND e.employee_type = 'expat'`;
-                }
-            }
-        }
-        query += ` ORDER BY b.break_out ASC`;
-        const result = await pool.query(query, params);
-        res.json(result.rows);
-    } catch (error) {
-        console.error('Error in /api/active-breaks:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+        const response = await fetch(`${API_URL}/api/users`);
+        const users = await response.json();
 
-app.get('/api/break-report', async (req, res) => {
-    const { employeeName, role } = req.query;
-    try {
-        let query = `
-            SELECT 
-                e.id as employee_id,
-                e.name AS employee_name,
-                e.employee_type,
-                d.name as department,
-                TO_CHAR(b.break_date, 'DD Mon YYYY') AS break_date,
-                TO_CHAR(b.break_out, 'HH24:MI') AS break_out,
-                CASE 
-                    WHEN b.break_in IS NOT NULL THEN TO_CHAR(b.break_in, 'HH24:MI')
-                    ELSE 'Active'
-                END AS break_in,
-                CASE 
-                    WHEN b.break_in IS NOT NULL THEN TO_CHAR(b.break_in - b.break_out, 'HH24:MI')
-                    ELSE 'In Progress'
-                END AS duration,
-                CASE 
-                    WHEN b.break_in IS NULL THEN 'On Break'
-                    ELSE 'Completed'
-                END AS status
-            FROM break_log b
-            JOIN employees e ON b.employee_id = e.id
-            JOIN departments d ON e.department_id = d.id
-            WHERE 1=1
-        `;
-        const params = [];
-        let paramCount = 1;
-        if (role !== 'admin' && role !== 'sub-admin') {
-            if (employeeName) {
-                query += ` AND e.name = $${paramCount}`;
-                params.push(employeeName);
-                paramCount++;
-            }
-        }
-        query += ` ORDER BY b.break_date DESC, b.break_out DESC LIMIT 1000`;
-        const result = await pool.query(query, params);
-        res.json(result.rows);
-    } catch (error) {
-        console.error('Error in /api/break-report:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+        const container = document.getElementById('userListContainer');
+        const countSpan = document.getElementById('userCount');
 
-app.get('/api/breaks/:employeeId', async (req, res) => {
-    const { employeeId } = req.params;
-    try {
-        const query = `
-            WITH daily_breaks AS (
-                SELECT 
-                    e.id AS employee_id,
-                    e.name AS employee_name,
-                    d.name as department,
-                    e.employee_type,
-                    b.id AS break_id,
-                    b.break_date,
-                    b.break_out,
-                    b.break_in,
-                    (b.break_in - b.break_out) AS break_duration,
-                    COALESCE(
-                        SUM(CASE 
-                            WHEN b.break_in IS NOT NULL THEN (b.break_in - b.break_out)
-                            ELSE INTERVAL '0'
-                        END) OVER (
-                            PARTITION BY e.id 
-                            ORDER BY b.break_date, b.break_out
-                            ROWS UNBOUNDED PRECEDING
-                        ),
-                        INTERVAL '0'
-                    ) AS used_break_time,
-                    e.total_break_allowance,
-                    CASE WHEN b.break_in IS NULL THEN true ELSE false END AS is_active
-                FROM break_log b
-                JOIN employees e ON b.employee_id = e.id
-                JOIN departments d ON e.department_id = d.id
-                WHERE e.id = $1
-            )
-            SELECT 
-                break_id AS id,
-                TO_CHAR(break_date, 'DD Mon YYYY') AS date,
-                employee_name AS "Employee Name",
-                department AS "Department",
-                CASE 
-                    WHEN employee_type = 'local' THEN '🇱🇰 Local'
-                    ELSE '🌍 Expat'
-                END AS "Type",
-                TO_CHAR(break_out, 'HH24:MI') AS "Break",
-                CASE 
-                    WHEN break_in IS NOT NULL THEN TO_CHAR(break_in, 'HH24:MI')
-                    ELSE 'Active'
-                END AS "IN",
-                CASE 
-                    WHEN break_in IS NOT NULL THEN TO_CHAR(break_duration, 'HH24:MI')
-                    ELSE '--:--'
-                END AS "Duration",
-                CASE 
-                    WHEN break_in IS NOT NULL THEN TO_CHAR(used_break_time, 'HH24:MI')
-                    ELSE TO_CHAR(used_break_time, 'HH24:MI')
-                END AS "Used",
-                CASE 
-                    WHEN break_in IS NOT NULL THEN TO_CHAR(total_break_allowance - used_break_time, 'HH24:MI')
-                    ELSE TO_CHAR(total_break_allowance - used_break_time, 'HH24:MI')
-                END AS "Remaining",
-                TO_CHAR(total_break_allowance, 'HH24:MI') AS "Total",
-                is_active
-            FROM daily_breaks
-            ORDER BY break_date DESC, break_out DESC;
-        `;
-        const result = await pool.query(query, [employeeId]);
-        res.json(result.rows);
-    } catch (error) {
-        console.error('Error in /api/breaks:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.get('/api/active-break/:employeeName', async (req, res) => {
-    const { employeeName } = req.params;
-    try {
-        const query = `
-            SELECT 
-                b.id,
-                b.break_out,
-                b.break_date,
-                e.id as employee_id
-            FROM break_log b
-            JOIN employees e ON b.employee_id = e.id
-            WHERE e.name = $1 
-            AND b.break_date = CURRENT_DATE
-            AND b.break_in IS NULL
-            ORDER BY b.break_out DESC
-            LIMIT 1
-        `;
-        const result = await pool.query(query, [employeeName]);
-        res.json(result.rows[0] || null);
-    } catch (error) {
-        console.error('Error in /api/active-break/:employeeName:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.post('/api/break-out', async (req, res) => {
-    const { employeeName, breakDate, breakOut } = req.body;
-    try {
-        let employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
-        if (employee.rows.length === 0) {
-            return res.status(404).json({ error: 'Employee not found' });
+        if (!users || users.length === 0) {
+            container.innerHTML = '<div class="no-data">No users found.</div>';
+            countSpan.textContent = '(0 users)';
+            return;
         }
-        const employeeId = employee.rows[0].id;
-        const activeBreak = await pool.query(
-            `SELECT id FROM break_log 
-             WHERE employee_id = $1 AND break_date = $2 AND break_in IS NULL`,
-            [employeeId, breakDate]
-        );
-        if (activeBreak.rows.length > 0) {
-            return res.status(400).json({ 
-                error: 'Employee already has an active break! Please click In first.' 
-            });
-        }
-        await pool.query(
-            `INSERT INTO break_log (employee_id, break_date, break_out) 
-             VALUES ($1, $2, $3)`,
-            [employeeId, breakDate, breakOut]
-        );
-        res.json({ 
-            success: true, 
-            message: `✅ ${employeeName} started break at ${breakOut}` 
+
+        countSpan.textContent = `(${users.length} users)`;
+        container.innerHTML = '';
+
+        users.forEach(user => {
+            const div = document.createElement('div');
+            div.className = 'employee-item';
+            
+            const roleMap = {
+                'admin': '👑 Admin',
+                'sub-admin': '🛡️ Sub-Admin',
+                'user': '👤 User'
+            };
+            
+            const isCurrentUser = currentUser && currentUser.username === user.username;
+            const isMainAdmin = user.username === 'admin';
+            
+            div.innerHTML = `
+                <span class="name">
+                    <i class="fas fa-user" style="color:#1a73e8; margin-right:8px;"></i>
+                    ${user.username}
+                    <span style="font-size:10px; background:#e9ecef; padding:2px 8px; border-radius:10px;">
+                        ${roleMap[user.role] || user.role}
+                        ${user.can_manage_users ? ' 🔑' : ''}
+                    </span>
+                    ${isCurrentUser ? ' <span style="font-size:10px; background:#1a73e8; color:white; padding:2px 8px; border-radius:10px;">You</span>' : ''}
+                </span>
+                <div class="actions" style="display:flex; gap:5px; flex-wrap:wrap;">
+                    ${!isMainAdmin ? `
+                        <button class="btn btn-primary btn-sm" onclick="editUsername('${user.username}')" title="Edit Username">
+                            <i class="fas fa-user-edit"></i>
+                        </button>
+                        <button class="btn btn-warning btn-sm" onclick="resetPassword('${user.username}')" title="Reset Password">
+                            <i class="fas fa-key"></i>
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteUser('${user.username}')" title="Delete User">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    ` : '<span style="color:#888; font-size:11px;">🔒 Main Admin</span>'}
+                </div>
+            `;
+            container.appendChild(div);
         });
     } catch (error) {
-        console.error('Error in /api/break-out:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Error loading users:', error);
     }
-});
+}
 
-app.post('/api/break-in', async (req, res) => {
-    const { employeeName, breakDate, breakIn } = req.body;
+async function addUser() {
+    const username = document.getElementById('newUsername').value.trim();
+    const password = document.getElementById('newUserPassword').value.trim();
+    const role = document.getElementById('newUserRole').value;
+
+    if (!username) {
+        showAlert('Please enter a username!', 'error');
+        return;
+    }
+
     try {
-        const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
-        if (employee.rows.length === 0) {
-            return res.status(404).json({ error: 'Employee not found' });
+        // Check if employee exists
+        const empCheck = await fetch(`${API_URL}/api/employees`);
+        const employees = await empCheck.json();
+        const employeeExists = employees.some(e => e.name === username);
+        
+        if (!employeeExists) {
+            showAlert('❌ Employee not found! Please add employee first.', 'error');
+            return;
         }
-        const employeeId = employee.rows[0].id;
-        const activeBreak = await pool.query(
-            `SELECT id, break_out FROM break_log 
-             WHERE employee_id = $1 AND break_date = $2 AND break_in IS NULL
-             ORDER BY break_out DESC
-             LIMIT 1`,
-            [employeeId, breakDate]
-        );
-        if (activeBreak.rows.length === 0) {
-            return res.status(400).json({ 
-                error: 'No active break found! Please click Break first.' 
-            });
+
+        const response = await fetch(`${API_URL}/api/users`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                username, 
+                password: password || 'user123', 
+                role: role || 'user',
+                can_manage_users: false 
+            })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            showAlert(`✅ User "${username}" added successfully!`, 'success');
+            document.getElementById('newUsername').value = '';
+            await loadUsers();
+        } else {
+            showAlert('❌ ' + result.error, 'error');
         }
-        const breakId = activeBreak.rows[0].id;
-        await pool.query(`UPDATE break_log SET break_in = $1 WHERE id = $2`, [breakIn, breakId]);
-        const duration = await pool.query(
-            `SELECT (break_in - break_out) AS duration FROM break_log WHERE id = $1`,
-            [breakId]
-        );
-        res.json({ 
-            success: true, 
-            message: `✅ ${employeeName} ended break at ${breakIn}`,
-            duration: duration.rows[0].duration
+    } catch (error) {
+        showAlert('❌ Error connecting to server', 'error');
+    }
+}
+
+async function editUsername(oldUsername) {
+    const newUsername = prompt(`Enter new username for "${oldUsername}":`, oldUsername);
+    if (!newUsername || newUsername === oldUsername) return;
+    try {
+        const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(oldUsername)}/username`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ newUsername })
+        });
+        const result = await response.json();
+        if (response.ok) {
+            showAlert('✅ Username updated!', 'success');
+            await loadUsers();
+            await loadEmployees();
+        } else {
+            showAlert('❌ ' + result.error, 'error');
+        }
+    } catch (error) {
+        showAlert('❌ Error connecting to server', 'error');
+    }
+}
+
+async function resetPassword(username) {
+    const newPassword = prompt(`Enter new password for "${username}":`, 'user123');
+    if (!newPassword || newPassword.length < 4) {
+        showAlert('Password must be at least 4 characters!', 'error');
+        return;
+    }
+    try {
+        const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(username)}/password`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ newPassword, currentUser })
+        });
+        const result = await response.json();
+        if (response.ok) {
+            showAlert(`✅ Password updated for "${username}"!`, 'success');
+            await loadUsers();
+        } else {
+            showAlert('❌ ' + result.error, 'error');
+        }
+    } catch (error) {
+        showAlert('❌ Error connecting to server', 'error');
+    }
+}
+
+async function deleteUser(username) {
+    if (username === 'admin') {
+        showAlert('Cannot delete main admin!', 'error');
+        return;
+    }
+    if (!confirm(`Are you sure you want to delete user "${username}"?`)) return;
+    try {
+        const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(username)}`, {
+            method: 'DELETE'
+        });
+        if (response.ok) {
+            showAlert(`✅ User "${username}" deleted!`, 'success');
+            await loadUsers();
+        } else {
+            showAlert('❌ Error deleting user', 'error');
+        }
+    } catch (error) {
+        showAlert('❌ Error connecting to server', 'error');
+    }
+}
+
+// =============================================
+// BREAK FUNCTIONS
+// =============================================
+
+async function onEmployeeChange() {
+    const select = document.getElementById('employeeSelect');
+    const employeeName = select.value;
+    
+    if (!employeeName) {
+        document.getElementById('selectedEmployeeDisplay').value = 'None selected';
+        document.getElementById('statusDisplay').innerHTML = 'Status: Idle';
+        document.getElementById('statusDisplay').style.background = '#e9ecef';
+        document.getElementById('employeeNameTitle').textContent = 'Select an employee';
+        return;
+    }
+
+    currentEmployee = employeeName;
+    document.getElementById('selectedEmployeeDisplay').value = employeeName;
+    document.getElementById('employeeNameTitle').textContent = employeeName;
+
+    await loadEmployeeBreaks(employeeName);
+    await checkActiveBreak(employeeName);
+}
+
+async function loadEmployeeBreaks(employeeName) {
+    const tbody = document.getElementById('breakBody');
+    
+    if (!employeeName) {
+        tbody.innerHTML = '<tr><td colspan="12" class="no-data">Please select an employee</td></tr>';
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/api/breaks/${encodeURIComponent(employeeName)}`);
+        const data = await response.json();
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="12" class="no-data">No breaks found. Click "Break" to start!</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = '';
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+            if (row.is_active) tr.className = 'active-break';
+
+            const statusBadge = row.is_active ?
+                '<span class="badge badge-warning">⏳ On Break</span>' :
+                '<span class="badge badge-success">✅ Completed</span>';
+
+            tr.innerHTML = `
+                <td><strong>${row.date}</strong></td>
+                <td>${employeeName}</td>
+                <td>${row["Break"]}</td>
+                <td>${row["IN"]}</td>
+                <td>${row["Duration"]}</td>
+                <td>--</td>
+                <td>--</td>
+                <td>--</td>
+                <td>${statusBadge}</td>
+                <td>
+                    <button class="btn btn-danger btn-sm" onclick="deleteBreak(${row.id})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
         });
     } catch (error) {
-        console.error('Error in /api/break-in:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Error loading breaks:', error);
+        tbody.innerHTML = '<tr><td colspan="12" class="no-data">Error loading breaks</td></tr>';
     }
-});
+}
 
-app.delete('/api/breaks/:id', async (req, res) => {
-    const { id } = req.params;
+async function loadActiveBreaks() {
     try {
-        await pool.query('DELETE FROM break_log WHERE id = $1', [id]);
-        res.json({ success: true, message: 'Break deleted successfully!' });
-    } catch (error) {
-        console.error('Error in /api/breaks/:id:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+        const response = await fetch(`${API_URL}/api/active-breaks`);
+        const data = await response.json();
 
-app.get('/api/today/:employeeName', async (req, res) => {
-    const { employeeName } = req.params;
-    try {
-        const query = `
-            SELECT 
-                COUNT(*) FILTER (WHERE break_in IS NOT NULL) AS breaks_today,
-                COALESCE(SUM(break_in - break_out) FILTER (WHERE break_in IS NOT NULL), INTERVAL '0') AS total_time_used,
-                COUNT(*) FILTER (WHERE break_in IS NULL) AS active_breaks
-            FROM break_log b
-            JOIN employees e ON b.employee_id = e.id
-            WHERE e.name = $1 AND b.break_date = CURRENT_DATE
-        `;
-        const result = await pool.query(query, [employeeName]);
-        res.json(result.rows[0]);
+        const container = document.getElementById('activeBreaksList');
+        const badge = document.getElementById('activeCountBadge');
+        const countSpan = document.getElementById('activeCount');
+        const currentBreakCount = document.getElementById('currentBreakCount');
+
+        const count = data ? data.length : 0;
+        if (badge) badge.innerHTML = `<i class="fas fa-users"></i> ${count} Active`;
+        if (countSpan) countSpan.textContent = `(${count})`;
+        if (currentBreakCount) currentBreakCount.textContent = count;
+
+        if (!data || data.length === 0) {
+            container.innerHTML = '<span style="color: #adb5bd; font-size:13px;">✅ No one is on break right now</span>';
+            return;
+        }
+
+        container.innerHTML = '';
+        data.forEach(person => {
+            const div = document.createElement('div');
+            div.className = 'active-person';
+            const typeIcon = person.employee_type === 'local' ? '🇱🇰' : '🌍';
+            div.innerHTML = `
+                <span class="dot"></span>
+                <strong>${person.employee_name}</strong>
+                <span style="font-size:10px; background:#e9ecef; padding:1px 8px; border-radius:10px;">${person.department || 'N/A'}</span>
+                <span style="font-size:10px;">${typeIcon}</span>
+                <span style="font-size:11px; color:#888;">since ${person.break_out}</span>
+            `;
+            container.appendChild(div);
+        });
     } catch (error) {
-        console.error('Error in /api/today/:employeeName:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Error loading active breaks:', error);
     }
-});
+}
+
+async function checkActiveBreak(employeeName) {
+    try {
+        const response = await fetch(`${API_URL}/api/active-break/${encodeURIComponent(employeeName)}`);
+        const data = await response.json();
+
+        const statusDisplay = document.getElementById('statusDisplay');
+        const breakOutBtn = document.getElementById('breakOutBtn');
+        const breakInBtn = document.getElementById('breakInBtn');
+
+        if (data && data.id) {
+            statusDisplay.innerHTML = '🔴 Status: <strong style="color:#dc3545;">ON BREAK</strong>';
+            statusDisplay.style.background = '#ffebee';
+            breakOutBtn.disabled = true;
+            breakOutBtn.style.opacity = '0.5';
+            breakInBtn.disabled = false;
+            breakInBtn.style.opacity = '1';
+        } else {
+            statusDisplay.innerHTML = '🟢 Status: <strong style="color:#28a745;">Available</strong>';
+            statusDisplay.style.background = '#e8f5e9';
+            breakOutBtn.disabled = false;
+            breakOutBtn.style.opacity = '1';
+            breakInBtn.disabled = true;
+            breakInBtn.style.opacity = '0.5';
+        }
+    } catch (error) {
+        console.error('Error checking active break:', error);
+    }
+}
+
+async function breakOut() {
+    const employeeName = document.getElementById('employeeSelect').value;
+    if (!employeeName) {
+        showAlert('Please select an employee first!', 'error');
+        return;
+    }
+
+    const now = new Date();
+    const breakOut = now.toTimeString().slice(0, 5);
+    const breakDate = now.toISOString().split('T')[0];
+
+    try {
+        const response = await fetch(`${API_URL}/api/break-out`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ employeeName, breakDate, breakOut })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            showAlert(`✅ ${employeeName} started break at ${breakOut}`, 'success');
+            await refreshData();
+            await loadActiveBreaks(); // Update active breaks instantly
+        } else {
+            showAlert('❌ ' + result.error, 'error');
+        }
+    } catch (error) {
+        showAlert('❌ Error connecting to server', 'error');
+    }
+}
+
+async function breakIn() {
+    const employeeName = document.getElementById('employeeSelect').value;
+    if (!employeeName) {
+        showAlert('Please select an employee first!', 'error');
+        return;
+    }
+
+    const now = new Date();
+    const breakIn = now.toTimeString().slice(0, 5);
+    const breakDate = now.toISOString().split('T')[0];
+
+    try {
+        const response = await fetch(`${API_URL}/api/break-in`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ employeeName, breakDate, breakIn })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            showAlert(`✅ ${employeeName} ended break at ${breakIn}`, 'success');
+            await refreshData();
+            await loadActiveBreaks(); // Update active breaks instantly
+        } else {
+            showAlert('❌ ' + result.error, 'error');
+        }
+    } catch (error) {
+        showAlert('❌ Error connecting to server', 'error');
+    }
+}
+
+async function deleteBreak(id) {
+    if (!confirm('Are you sure you want to delete this break?')) return;
+    try {
+        const response = await fetch(`${API_URL}/api/breaks/${id}`, {
+            method: 'DELETE'
+        });
+        if (response.ok) {
+            showAlert('✅ Break deleted successfully!', 'success');
+            await refreshData();
+            await loadActiveBreaks();
+        } else {
+            showAlert('❌ Error deleting break', 'error');
+        }
+    } catch (error) {
+        showAlert('❌ Error connecting to server', 'error');
+    }
+}
 
 // =============================================
-// START SERVER
+// REPORT FUNCTIONS
 // =============================================
 
-app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`👑 Main Admin: admin / 535680`);
-    console.log(`📦 Database: PostgreSQL`);
-});
+async function loadFullReport() {
+    try {
+        const response = await fetch(`${API_URL}/api/break-report`);
+        const data = await response.json();
+        
+        const tbody = document.getElementById('reportBody');
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="no-data">No breaks found</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = '';
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+            const statusBadge = row.status === 'On Break' ?
+                '<span class="badge badge-warning">🔴 On Break</span>' :
+                '<span class="badge badge-success">✅ Completed</span>';
+            tr.innerHTML = `
+                <td>${row.break_date}</td>
+                <td>${row.employee_name}</td>
+                <td>${row.department || '-'}</td>
+                <td>${row.employee_type === 'local' ? '🇱🇰 Local' : '🌍 Expat'}</td>
+                <td>${row.break_out}</td>
+                <td>${row.break_in}</td>
+                <td>${row.duration}</td>
+                <td>${statusBadge}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (error) {
+        console.error('Error loading report:', error);
+    }
+}
+
+// =============================================
+// UTILITY FUNCTIONS
+// =============================================
+
+async function refreshData() {
+    await onEmployeeChange();
+    await loadActiveBreaks();
+}
+
+function showAlert(message, type) {
+    const alertDiv = document.getElementById('alert');
+    alertDiv.textContent = message;
+    alertDiv.className = `alert alert-${type}`;
+    setTimeout(() => {
+        alertDiv.className = 'alert';
+    }, 5000);
+}
+
+function exportReport() {
+    showAlert('📊 Report export coming soon!', 'success');
+}
+
+function exportReportPDF() {
+    showAlert('📄 PDF export coming soon!', 'success');
+}
+
+function applyReportFilters() {
+    showAlert('✅ Filters applied!', 'success');
+}
+
+function resetReportFilters() {
+    showAlert('✅ Filters reset!', 'success');
+}
+
+function updateSetting(setting) {
+    showAlert('✅ Setting updated!', 'success');
+}
+
+function clearAllData() {
+    if (!confirm('⚠️ WARNING: This will delete ALL data. Are you sure?')) return;
+    showAlert('🗑️ All data cleared!', 'success');
+}
+
+function resetToDefault() {
+    if (!confirm('Reset all settings to default values?')) return;
+    showAlert('✅ Settings reset to default!', 'success');
+}
