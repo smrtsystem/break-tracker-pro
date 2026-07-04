@@ -33,6 +33,7 @@
                     <span id="userDisplay" style="background:rgba(255,255,255,0.15); padding:4px 14px; border-radius:20px; font-size:12px; font-weight:500;">
                         <i class="fas fa-user"></i> <span id="userName">Loading...</span>
                     </span>
+                    <span id="userRoleBadge" style="background:rgba(255,255,255,0.1); padding:2px 10px; border-radius:12px; font-size:10px; border:1px solid rgba(255,255,255,0.2);"></span>
                     <button class="btn btn-secondary btn-sm" onclick="logout()" style="background:rgba(255,255,255,0.15); color:white; border:1px solid rgba(255,255,255,0.2);">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </button>
@@ -57,7 +58,7 @@
             <button class="nav-tab admin-only" onclick="switchTab('users')" style="display:none;">
                 <i class="fas fa-users-cog"></i> Users
             </button>
-            <button class="nav-tab admin-only" onclick="switchTab('settings')" style="display:none;">
+            <button class="nav-tab subadmin-only" onclick="switchTab('settings')" style="display:none;">
                 <i class="fas fa-sliders-h"></i> Settings
             </button>
         </div>
@@ -76,9 +77,6 @@
                     </div>
                     <button class="btn btn-primary" onclick="refreshData()">
                         <i class="fas fa-sync-alt"></i> Refresh
-                    </button>
-                    <button class="btn btn-success admin-only" onclick="loadAllEmployees()" style="display:none;">
-                        <i class="fas fa-users"></i> Load All
                     </button>
                 </div>
             </div>
@@ -131,23 +129,24 @@
                         <tr>
                             <th>DATE</th>
                             <th>EMPLOYEE</th>
+                            <th>DEPARTMENT</th>
+                            <th>TYPE</th>
                             <th>BREAK</th>
                             <th>IN</th>
                             <th>DURATION</th>
                             <th>USED</th>
                             <th>REMAINING</th>
-                            <th>TOTAL</th>
                             <th>STATUS</th>
                             <th>ACTION</th>
                         </tr>
                     </thead>
                     <tbody id="breakBody">
-                        <tr><td colspan="10" class="no-data">Please select an employee</td></tr>
+                        <tr><td colspan="11" class="no-data">Please select an employee</td></tr>
                     </tbody>
                 </table>
             </div>
 
-            <!-- ===== REPORT BUTTON - Visible to ALL Users ===== -->
+            <!-- ===== REPORT BUTTON ===== -->
             <div class="report-button-row">
                 <button class="btn btn-primary" onclick="openReportModal()" style="padding: 14px 40px; font-size: 15px; border-radius: 50px; box-shadow: 0 4px 20px rgba(26,115,232,0.3);">
                     <i class="fas fa-file-alt"></i> View Complete Report
@@ -160,20 +159,49 @@
             </div>
         </div>
 
-        <!-- ===== TAB 2: CONFIGURATION (Admin Only) ===== -->
+        <!-- ===== TAB 2: CONFIGURATION ===== -->
         <div id="tab-config" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <i class="fas fa-building"></i> Departments
+                </div>
+                <div class="form-row">
+                    <div class="field" style="flex:1; min-width:150px;">
+                        <label>Department Name</label>
+                        <input type="text" id="newDepartmentName" placeholder="Enter department..." style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif;">
+                    </div>
+                    <div class="field" style="flex:0.5; min-width:80px;">
+                        <button class="btn btn-success" onclick="addDepartment()" style="width:100%; margin-top:20px;">
+                            <i class="fas fa-plus"></i> Add
+                        </button>
+                    </div>
+                </div>
+                <div id="departmentList" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;"></div>
+            </div>
+
             <div class="card">
                 <div class="card-title">
                     <i class="fas fa-user-plus"></i> Add New Employee
                 </div>
                 <div class="form-row">
-                    <div class="field" style="flex:2; min-width:200px;">
+                    <div class="field" style="flex:1.2; min-width:150px;">
                         <label>Employee Name</label>
                         <input type="text" id="newEmployeeName" placeholder="Enter employee name..." style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif;">
                     </div>
-                    <div class="field" style="flex:1; min-width:100px;">
-                        <button class="btn btn-success" onclick="addEmployee()" style="width:100%;">
-                            <i class="fas fa-plus"></i> Add Employee
+                    <div class="field" style="flex:0.8; min-width:130px;">
+                        <label>Department</label>
+                        <select id="newEmployeeDepartment" style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif; background:#f8f9fa;"></select>
+                    </div>
+                    <div class="field" style="flex:0.8; min-width:120px;">
+                        <label>Employee Type</label>
+                        <select id="newEmployeeType" style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
+                            <option value="local">🇱🇰 Local Employee</option>
+                            <option value="expat">🌍 Expat Employee</option>
+                        </select>
+                    </div>
+                    <div class="field" style="flex:0.5; min-width:80px;">
+                        <button class="btn btn-success" onclick="addEmployee()" style="width:100%; margin-top:20px;">
+                            <i class="fas fa-plus"></i> Add
                         </button>
                     </div>
                 </div>
@@ -190,18 +218,18 @@
             </div>
         </div>
 
-        <!-- ===== TAB 3: USERS (Admin Only) ===== -->
+        <!-- ===== TAB 3: USERS ===== -->
         <div id="tab-users" class="tab-content">
             <div class="card">
                 <div class="card-title">
                     <i class="fas fa-user-plus"></i> Add New User
                 </div>
                 <div class="form-row">
-                    <div class="field" style="flex:1.5; min-width:150px;">
+                    <div class="field" style="flex:1.2; min-width:130px;">
                         <label>Username (Must match employee name)</label>
                         <input type="text" id="newUsername" placeholder="Enter username..." style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif;">
                     </div>
-                    <div class="field" style="flex:1; min-width:120px;">
+                    <div class="field" style="flex:0.8; min-width:100px;">
                         <label>Password</label>
                         <input type="text" id="newUserPassword" value="user123" style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif;">
                     </div>
@@ -209,12 +237,13 @@
                         <label>Role</label>
                         <select id="newUserRole" style="width:100%; padding:9px 14px; border:2px solid #e9ecef; border-radius:10px; font-size:13px; font-family: 'Inter', sans-serif; background:#f8f9fa;">
                             <option value="user">User</option>
+                            <option value="sub-admin">Sub-Admin</option>
                             <option value="admin">Admin</option>
                         </select>
                     </div>
-                    <div class="field" style="flex:0.8; min-width:100px;">
+                    <div class="field" style="flex:0.5; min-width:80px;">
                         <button class="btn btn-success" onclick="addUser()" style="width:100%; margin-top:20px;">
-                            <i class="fas fa-plus"></i> Add User
+                            <i class="fas fa-plus"></i> Add
                         </button>
                     </div>
                 </div>
@@ -228,21 +257,13 @@
                     <i class="fas fa-users-cog"></i> User Management
                     <span style="font-size:12px; font-weight:400; color:#888; margin-left:8px;" id="userCount">(0 users)</span>
                 </div>
-                <div style="margin-bottom:12px; padding:10px; background:#e8f5e9; border-radius:8px; font-size:12px; color:#2e7d32; border:1px solid #c8e6c9;">
-                    <i class="fas fa-info-circle"></i> 
-                    <strong>Actions:</strong> 
-                    <span style="margin:0 8px;">✏️ Edit Username</span>
-                    <span style="margin:0 8px;">🔑 Reset Password</span>
-                    <span style="margin:0 8px;">🔄 Toggle Role</span>
-                    <span style="margin:0 8px;">🗑️ Delete User</span>
-                </div>
                 <div id="userListContainer" class="employee-list">
                     <div class="no-data" style="grid-column: 1/-1;">Loading users...</div>
                 </div>
             </div>
         </div>
 
-        <!-- ===== TAB 4: SETTINGS (Admin Only) ===== -->
+        <!-- ===== TAB 4: SETTINGS ===== -->
         <div id="tab-settings" class="tab-content">
             <div class="card">
                 <div class="card-title">
@@ -284,7 +305,7 @@
         </div>
     </div>
 
-    <!-- ===== REPORT MODAL WITH FILTERS - Visible to ALL Users ===== -->
+    <!-- ===== REPORT MODAL ===== -->
     <div class="modal-overlay" id="reportModal">
         <div class="modal">
             <div class="modal-header">
@@ -294,7 +315,6 @@
                 </button>
             </div>
             <div class="modal-body">
-                <!-- Filter Section -->
                 <div style="margin-bottom: 15px; padding: 15px; background: #f8f9fa; border-radius: 10px; border: 1px solid #e9ecef;">
                     <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
                         <div style="flex: 1; min-width: 150px;">
@@ -345,13 +365,14 @@
                     </div>
                 </div>
 
-                <!-- Report Table -->
                 <div class="table-container">
                     <table>
                         <thead>
                             <tr>
                                 <th>DATE</th>
                                 <th>EMPLOYEE</th>
+                                <th>DEPARTMENT</th>
+                                <th>TYPE</th>
                                 <th>BREAK</th>
                                 <th>IN</th>
                                 <th>DURATION</th>
@@ -359,12 +380,11 @@
                             </tr>
                         </thead>
                         <tbody id="reportBody">
-                            <tr><td colspan="6" class="no-data">Loading report...</td></tr>
+                            <tr><td colspan="8" class="no-data">Loading report...</td></tr>
                         </tbody>
                     </table>
                 </div>
 
-                <!-- Export Buttons -->
                 <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
                     <button class="btn btn-success" onclick="exportReport()">
                         <i class="fas fa-file-csv"></i> Export CSV
