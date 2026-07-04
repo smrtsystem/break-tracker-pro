@@ -883,3 +883,22 @@ app.listen(PORT, () => {
     console.log(`👑 Main Admin: admin / 535680`);
     console.log(`📦 Database: PostgreSQL`);
 });
+// TEMPORARY MIGRATION ROUTE - REMOVE AFTER RUNNING
+app.get('/api/migrate', async (req, res) => {
+    try {
+        await runMigration();
+        res.json({ success: true, message: 'Migration completed successfully!' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+async function runMigration() {
+    const client = await pool.connect();
+    try {
+        // Add all columns and constraints here
+        // ... (the SQL from below)
+    } finally {
+        client.release();
+    }
+}
