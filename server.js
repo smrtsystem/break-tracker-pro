@@ -17,23 +17,19 @@ app.get('/', (req, res) => {
 });
 
 // =============================================
-// DATABASE CONNECTION - FIXED
+// DATABASE CONNECTION
 // =============================================
 
-// ✅ ONLY use environment variable - NO hardcoded fallback!
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!DATABASE_URL) {
     console.error('❌ DATABASE_URL environment variable is not set!');
-    console.error('Please set DATABASE_URL in Render environment variables.');
     process.exit(1);
 }
 
-// Clean the URL - remove any quotes, spaces, or newlines
 const cleanUrl = DATABASE_URL.trim().replace(/^"|"$/g, '').replace(/\s/g, '');
 
 console.log('📦 Connecting to database...');
-console.log('📦 URL prefix:', cleanUrl.substring(0, 40) + '...');
 
 const pool = new Pool({
     connectionString: cleanUrl,
@@ -45,15 +41,167 @@ const pool = new Pool({
     max: 20,
 });
 
-// Test database connection with retry
+// =============================================
+// AUTO-MIGRATION: Fix Database Schema on Startup
+// =============================================
+
+async function runAutoMigration() {
+    const client = await pool.connect();
+    try {
+        console.log('🔧 Checking database schema...');
+        
+        // 1. Create departments table
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS departments (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(50) NOT NULL UNIQUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('✅ Departments table ready');
+
+        // 2. Insert default departments
+        await client.query(`
+            INSERT INTO departments (name) VALUES 
+                ('Betrealated'),
+                ('Banking'),
+                ('CS'),
+                ('Checking')
+            ON CONFLICT (name) DO NOTHING
+        `);
+        console.log('✅ Default departments inserted');
+
+        // 3. Check and add department_id column
+        const deptColCheck = await client.query(`
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'employees' AND column_name = 'department_id'
+        `);
+        
+        if (deptColCheck.rows.length === 0) {
+            console.log('🔧 Adding department_id column...');
+            await client.query(`
+                ALTER TABLE employees ADD COLUMN department_id INTEGER;
+                ALTER TABLE employees 
+                ADD CONSTRAINT fk_employee_department 
+                FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE;
+            `);
+            
+            // Set default department
+            await client.query(`
+                UPDATE employees 
+                SET department_id = (SELECT id FROM departments WHERE name = 'Betrealated' LIMIT 1)
+                WHERE department_id IS NULL;
+                ALTER TABLE employees ALTER COLUMN department_id SET NOT NULL;
+            `);
+            console.log('✅ department_id column added');
+        }
+
+        // 4. Check and add employee_type column
+        const typeColCheck = await client.query(`
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'employees' AND column_name = 'employee_type'
+        `);
+        
+        if (typeColCheck.rows.length === 0) {
+            console.log('🔧 Adding employee_type column...');
+            await client.query(`
+                ALTER TABLE employees ADD COLUMN employee_type VARCHAR(20) DEFAULT 'local';
+                ALTER TABLE employees 
+                ADD CONSTRAINT chk_employee_type 
+                CHECK (employee_type IN ('local', 'expat'));
+                UPDATE employees SET employee_type = 'local' WHERE employee_type IS NULL;
+            `);
+            console.log('✅ employee_type column added');
+        }
+
+        // 5. Check and add can_manage_users column
+        const manageColCheck = await client.query(`
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'users' AND column_name = 'can_manage_users'
+        `);
+        
+        if (manageColCheck.rows.length === 0) {
+            console.log('🔧 Adding can_manage_users column...');
+            await client.query(`
+                ALTER TABLE users ADD COLUMN can_manage_users BOOLEAN DEFAULT FALSE;
+                UPDATE users SET can_manage_users = FALSE WHERE can_manage_users IS NULL;
+            `);
+            console.log('✅ can_manage_users column added');
+        }
+
+        // 6. Ensure admin user exists
+        await client.query(`
+            INSERT INTO users (username, password, role, can_manage_users) 
+            VALUES ('admin', '535680', 'admin', TRUE)
+            ON CONFLICT (username) DO UPDATE 
+            SET password = '535680', role = 'admin', can_manage_users = TRUE
+        `);
+        console.log('✅ Admin user verified');
+
+        // 7. Insert sample employees if missing
+        const empCount = await client.query('SELECT COUNT(*) FROM employees');
+        if (parseInt(empCount.rows[0].count) === 0) {
+            console.log('🔧 Inserting sample employees...');
+            const depts = await client.query('SELECT id, name FROM departments');
+            const deptMap = {};
+            depts.rows.forEach(d => { deptMap[d.name] = d.id; });
+
+            const sampleEmployees = [
+                { name: 'Rajesh Sharma', dept: 'Betrealated', type: 'local' },
+                { name: 'Priya Patel', dept: 'Betrealated', type: 'local' },
+                { name: 'John Smith', dept: 'Betrealated', type: 'expat' },
+                { name: 'Amit Kumar', dept: 'Banking', type: 'local' },
+                { name: 'Sneha Reddy', dept: 'Banking', type: 'local' },
+                { name: 'David Wilson', dept: 'Banking', type: 'expat' },
+                { name: 'Vikram Singh', dept: 'CS', type: 'local' },
+                { name: 'Ananya Gupta', dept: 'CS', type: 'local' },
+                { name: 'Michael Brown', dept: 'CS', type: 'expat' },
+                { name: 'Deepak Verma', dept: 'Checking', type: 'local' },
+                { name: 'Kavita Nair', dept: 'Checking', type: 'local' },
+                { name: 'Robert Taylor', dept: 'Checking', type: 'expat' }
+            ];
+
+            for (const emp of sampleEmployees) {
+                const deptId = deptMap[emp.dept];
+                if (deptId) {
+                    await client.query(
+                        `INSERT INTO employees (name, department_id, employee_type) 
+                         VALUES ($1, $2, $3) ON CONFLICT (name, department_id) DO NOTHING`,
+                        [emp.name, deptId, emp.type]
+                    );
+                }
+            }
+            console.log('✅ Sample employees inserted');
+        }
+
+        // 8. Create indexes
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department_id);
+            CREATE INDEX IF NOT EXISTS idx_employees_name ON employees(name);
+        `);
+
+        console.log('✅ Database migration completed successfully!');
+    } catch (error) {
+        console.error('❌ Migration error:', error.message);
+    } finally {
+        client.release();
+    }
+}
+
+// =============================================
+// CONNECT AND MIGRATE DATABASE
+// =============================================
+
 async function connectDB() {
     let retries = 5;
     while (retries > 0) {
         try {
             const client = await pool.connect();
             console.log('✅ Connected to PostgreSQL successfully!');
-            await createTables();
-            console.log('✅ Tables created/verified successfully!');
+            
+            // Run auto-migration
+            await runAutoMigration();
+            
             client.release();
             return;
         } catch (err) {
@@ -71,125 +219,10 @@ async function connectDB() {
 connectDB();
 
 // =============================================
-// CREATE TABLES FUNCTION
 // =============================================
-
-async function createTables() {
-    // Create departments table
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS departments (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(50) NOT NULL UNIQUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-
-    // Insert default departments
-    const defaultDepartments = ['Betrealated', 'Banking', 'CS', 'Checking'];
-    for (const dept of defaultDepartments) {
-        await pool.query(
-            'INSERT INTO departments (name) VALUES ($1) ON CONFLICT (name) DO NOTHING',
-            [dept]
-        );
-    }
-    console.log('✅ Default departments created');
-
-    // Create employees table with department and type
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS employees (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(100) NOT NULL,
-            department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-            employee_type VARCHAR(20) NOT NULL CHECK (employee_type IN ('local', 'expat')),
-            total_break_allowance INTERVAL DEFAULT '2 hours 30 minutes',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(name, department_id)
-        )
-    `);
-
-    // Create break_log table
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS break_log (
-            id SERIAL PRIMARY KEY,
-            employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-            break_date DATE NOT NULL,
-            break_out TIME NOT NULL,
-            break_in TIME,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            CONSTRAINT valid_break_times CHECK (break_in IS NULL OR break_in > break_out)
-        )
-    `);
-
-    // Create users table
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username VARCHAR(50) NOT NULL UNIQUE,
-            password VARCHAR(100) NOT NULL,
-            role VARCHAR(20) DEFAULT 'user',
-            can_manage_users BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-
-    // Create indexes
-    await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_break_log_employee_date 
-        ON break_log(employee_id, break_date)
-    `);
-    
-    await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_break_log_active 
-        ON break_log(employee_id, break_date) 
-        WHERE break_in IS NULL
-    `);
-
-    // Insert default admin (main admin)
-    const adminCheck = await pool.query('SELECT id FROM users WHERE username = $1', ['admin']);
-    if (adminCheck.rows.length === 0) {
-        await pool.query(
-            'INSERT INTO users (username, password, role, can_manage_users) VALUES ($1, $2, $3, $4)',
-            ['admin', '535680', 'admin', true]
-        );
-        console.log('✅ Main admin user created (admin / 535680)');
-    }
-
-    // Insert sample employees by department
-    const sampleEmployees = [
-        // Betrealated Department
-        { name: 'Rajesh Sharma', dept: 'Betrealated', type: 'local' },
-        { name: 'Priya Patel', dept: 'Betrealated', type: 'local' },
-        { name: 'John Smith', dept: 'Betrealated', type: 'expat' },
-        
-        // Banking Department
-        { name: 'Amit Kumar', dept: 'Banking', type: 'local' },
-        { name: 'Sneha Reddy', dept: 'Banking', type: 'local' },
-        { name: 'David Wilson', dept: 'Banking', type: 'expat' },
-        
-        // CS Department
-        { name: 'Vikram Singh', dept: 'CS', type: 'local' },
-        { name: 'Ananya Gupta', dept: 'CS', type: 'local' },
-        { name: 'Michael Brown', dept: 'CS', type: 'expat' },
-        
-        // Checking Department
-        { name: 'Deepak Verma', dept: 'Checking', type: 'local' },
-        { name: 'Kavita Nair', dept: 'Checking', type: 'local' },
-        { name: 'Robert Taylor', dept: 'Checking', type: 'expat' },
-    ];
-
-    for (const emp of sampleEmployees) {
-        const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [emp.dept]);
-        if (deptResult.rows.length > 0) {
-            const deptId = deptResult.rows[0].id;
-            await pool.query(
-                `INSERT INTO employees (name, department_id, employee_type) 
-                 VALUES ($1, $2, $3) ON CONFLICT (name, department_id) DO NOTHING`,
-                [emp.name, deptId, emp.type]
-            );
-        }
-    }
-    console.log('✅ Sample employees created');
-}
+// ALL YOUR EXISTING ROUTES GO HERE
+// =============================================
+// =============================================
 
 // =============================================
 // TEST ROUTES
@@ -221,175 +254,9 @@ app.get('/api/db-test', async (req, res) => {
 });
 
 // =============================================
-// MIGRATION ROUTE - Run this once to fix schema
-// =============================================
-
-app.get('/api/migrate', async (req, res) => {
-    try {
-        await runMigration();
-        res.json({ success: true, message: '✅ Migration completed successfully!' });
-    } catch (error) {
-        console.error('Migration error:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-async function runMigration() {
-    const client = await pool.connect();
-    try {
-        // 1. Create departments table if it doesn't exist
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS departments (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(50) NOT NULL UNIQUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
-        // 2. Insert default departments
-        await client.query(`
-            INSERT INTO departments (name) VALUES 
-                ('Betrealated'),
-                ('Banking'),
-                ('CS'),
-                ('Checking')
-            ON CONFLICT (name) DO NOTHING
-        `);
-
-        // 3. Add department_id column to employees
-        await client.query(`
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'employees' AND column_name = 'department_id'
-                ) THEN
-                    ALTER TABLE employees ADD COLUMN department_id INTEGER;
-                    ALTER TABLE employees 
-                    ADD CONSTRAINT fk_employee_department 
-                    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE;
-                END IF;
-            END $$
-        `);
-
-        // 4. Set default department for existing employees
-        await client.query(`
-            UPDATE employees 
-            SET department_id = (SELECT id FROM departments WHERE name = 'Betrealated' LIMIT 1)
-            WHERE department_id IS NULL
-        `);
-
-        // 5. Make department_id NOT NULL
-        await client.query(`
-            ALTER TABLE employees ALTER COLUMN department_id SET NOT NULL
-        `);
-
-        // 6. Add employee_type column
-        await client.query(`
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'employees' AND column_name = 'employee_type'
-                ) THEN
-                    ALTER TABLE employees ADD COLUMN employee_type VARCHAR(20) DEFAULT 'local';
-                    ALTER TABLE employees 
-                    ADD CONSTRAINT chk_employee_type 
-                    CHECK (employee_type IN ('local', 'expat'));
-                END IF;
-            END $$
-        `);
-
-        // 7. Update employee_type for existing employees
-        await client.query(`
-            UPDATE employees SET employee_type = 'local' WHERE employee_type IS NULL
-        `);
-
-        // 8. Add can_manage_users to users
-        await client.query(`
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'users' AND column_name = 'can_manage_users'
-                ) THEN
-                    ALTER TABLE users ADD COLUMN can_manage_users BOOLEAN DEFAULT FALSE;
-                END IF;
-            END $$
-        `);
-
-        // 9. Update existing users
-        await client.query(`
-            UPDATE users SET can_manage_users = FALSE WHERE can_manage_users IS NULL
-        `);
-
-        // 10. Create indexes
-        await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department_id);
-            CREATE INDEX IF NOT EXISTS idx_employees_name ON employees(name)
-        `);
-
-        // 11. Update admin user
-        await client.query(`
-            UPDATE users SET password = '535680', role = 'admin', can_manage_users = TRUE 
-            WHERE username = 'admin'
-        `);
-
-        await client.query(`
-            INSERT INTO users (username, password, role, can_manage_users) 
-            VALUES ('admin', '535680', 'admin', TRUE)
-            ON CONFLICT (username) DO NOTHING
-        `);
-
-        // 12. Insert sample employees
-        const depts = await client.query('SELECT id, name FROM departments');
-        const deptMap = {};
-        depts.rows.forEach(d => { deptMap[d.name] = d.id; });
-
-        const sampleEmployees = [
-            { name: 'Rajesh Sharma', dept: 'Betrealated', type: 'local' },
-            { name: 'Priya Patel', dept: 'Betrealated', type: 'local' },
-            { name: 'John Smith', dept: 'Betrealated', type: 'expat' },
-            { name: 'Amit Kumar', dept: 'Banking', type: 'local' },
-            { name: 'Sneha Reddy', dept: 'Banking', type: 'local' },
-            { name: 'David Wilson', dept: 'Banking', type: 'expat' },
-            { name: 'Vikram Singh', dept: 'CS', type: 'local' },
-            { name: 'Ananya Gupta', dept: 'CS', type: 'local' },
-            { name: 'Michael Brown', dept: 'CS', type: 'expat' },
-            { name: 'Deepak Verma', dept: 'Checking', type: 'local' },
-            { name: 'Kavita Nair', dept: 'Checking', type: 'local' },
-            { name: 'Robert Taylor', dept: 'Checking', type: 'expat' }
-        ];
-
-        for (const emp of sampleEmployees) {
-            const deptId = deptMap[emp.dept];
-            if (deptId) {
-                await client.query(
-                    `INSERT INTO employees (name, department_id, employee_type) 
-                     VALUES ($1, $2, $3) ON CONFLICT (name, department_id) DO NOTHING`,
-                    [emp.name, deptId, emp.type]
-                );
-            }
-        }
-
-        // 13. Create user for Rajesh Sharma
-        await client.query(`
-            INSERT INTO users (username, password, role, can_manage_users) 
-            VALUES ('Rajesh Sharma', 'user123', 'user', FALSE)
-            ON CONFLICT (username) DO NOTHING
-        `);
-
-        console.log('✅ Migration completed successfully!');
-    } finally {
-        client.release();
-    }
-}
-
-// =============================================
 // DEPARTMENT ROUTES
 // =============================================
 
-// Get all departments
 app.get('/api/departments', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM departments ORDER BY name');
@@ -400,10 +267,8 @@ app.get('/api/departments', async (req, res) => {
     }
 });
 
-// Add department
 app.post('/api/departments', async (req, res) => {
     const { name } = req.body;
-    
     try {
         await pool.query('INSERT INTO departments (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [name]);
         res.json({ success: true, message: `Department "${name}" added!` });
@@ -413,10 +278,8 @@ app.post('/api/departments', async (req, res) => {
     }
 });
 
-// Delete department
 app.delete('/api/departments/:name', async (req, res) => {
     const { name } = req.params;
-    
     try {
         const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [name]);
         if (deptResult.rows.length > 0) {
@@ -435,17 +298,14 @@ app.delete('/api/departments/:name', async (req, res) => {
 // AUTHENTICATION ROUTES
 // =============================================
 
-// Login
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     console.log('🔐 Login attempt:', username);
-    
     try {
         const result = await pool.query(
             'SELECT * FROM users WHERE username = $1 AND password = $2',
             [username, password]
         );
-        
         if (result.rows.length > 0) {
             const user = result.rows[0];
             console.log('✅ Login successful:', username);
@@ -474,7 +334,6 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// Get all users
 app.get('/api/users', async (req, res) => {
     try {
         const result = await pool.query(
@@ -487,22 +346,18 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
-// Add new user
 app.post('/api/users', async (req, res) => {
     const { username, password, role, can_manage_users } = req.body;
-    
     try {
         const existing = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
         if (existing.rows.length > 0) {
             return res.status(400).json({ error: 'Username already exists' });
         }
-        
         const result = await pool.query(
             `INSERT INTO users (username, password, role, can_manage_users) 
              VALUES ($1, $2, $3, $4) RETURNING id, username, role, can_manage_users`,
             [username, password || 'user123', role || 'user', can_manage_users || false]
         );
-        
         res.json({ 
             success: true, 
             user: result.rows[0],
@@ -514,23 +369,18 @@ app.post('/api/users', async (req, res) => {
     }
 });
 
-// Update username
 app.put('/api/users/:oldUsername/username', async (req, res) => {
     const { oldUsername } = req.params;
     const { newUsername } = req.body;
-    
     try {
         if (oldUsername === 'admin') {
             return res.status(400).json({ error: 'Cannot rename main admin user' });
         }
-        
         const existing = await pool.query('SELECT id FROM users WHERE username = $1', [newUsername]);
         if (existing.rows.length > 0) {
             return res.status(400).json({ error: 'Username already exists' });
         }
-        
         await pool.query('UPDATE users SET username = $1 WHERE username = $2', [newUsername, oldUsername]);
-        
         res.json({ success: true, message: `Username updated from "${oldUsername}" to "${newUsername}"` });
     } catch (error) {
         console.error('Error updating username:', error);
@@ -538,18 +388,14 @@ app.put('/api/users/:oldUsername/username', async (req, res) => {
     }
 });
 
-// Reset password
 app.put('/api/users/:username/password', async (req, res) => {
     const { username } = req.params;
     const { newPassword, currentUser } = req.body;
-    
     try {
         if (currentUser && currentUser.role !== 'admin' && !currentUser.can_manage_users && currentUser.username !== username) {
             return res.status(403).json({ error: 'You do not have permission to reset passwords' });
         }
-        
         await pool.query('UPDATE users SET password = $1 WHERE username = $2', [newPassword, username]);
-        
         res.json({ success: true, message: `Password updated for "${username}"` });
     } catch (error) {
         console.error('Error resetting password:', error);
@@ -557,16 +403,13 @@ app.put('/api/users/:username/password', async (req, res) => {
     }
 });
 
-// Update user role & permissions
 app.put('/api/users/:username', async (req, res) => {
     const { username } = req.params;
     const { role, can_manage_users } = req.body;
-    
     try {
         if (username === 'admin') {
             return res.status(400).json({ error: 'Cannot change main admin' });
         }
-        
         await pool.query(
             'UPDATE users SET role = $1, can_manage_users = $2 WHERE username = $3',
             [role, can_manage_users || false, username]
@@ -578,15 +421,12 @@ app.put('/api/users/:username', async (req, res) => {
     }
 });
 
-// Delete user
 app.delete('/api/users/:username', async (req, res) => {
     const { username } = req.params;
-    
     try {
         if (username === 'admin') {
             return res.status(400).json({ error: 'Cannot delete main admin user' });
         }
-        
         await pool.query('DELETE FROM users WHERE username = $1', [username]);
         res.json({ success: true, message: 'User deleted successfully!' });
     } catch (error) {
@@ -599,7 +439,6 @@ app.delete('/api/users/:username', async (req, res) => {
 // EMPLOYEE ROUTES
 // =============================================
 
-// Get all employees with department and type
 app.get('/api/employees', async (req, res) => {
     try {
         const query = `
@@ -623,18 +462,14 @@ app.get('/api/employees', async (req, res) => {
     }
 });
 
-// Add employee
 app.post('/api/employees', async (req, res) => {
     const { name, department, employee_type } = req.body;
-    
     try {
         const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [department]);
         if (deptResult.rows.length === 0) {
             return res.status(400).json({ error: 'Department not found' });
         }
-        
         const deptId = deptResult.rows[0].id;
-        
         const existing = await pool.query(
             'SELECT id FROM employees WHERE name = $1 AND department_id = $2',
             [name, deptId]
@@ -642,13 +477,11 @@ app.post('/api/employees', async (req, res) => {
         if (existing.rows.length > 0) {
             return res.status(400).json({ error: 'Employee already exists in this department' });
         }
-        
         await pool.query(
             `INSERT INTO employees (name, department_id, employee_type) 
              VALUES ($1, $2, $3)`,
             [name, deptId, employee_type]
         );
-        
         res.json({ success: true, message: `Employee "${name}" added successfully!` });
     } catch (error) {
         console.error('Error adding employee:', error);
@@ -656,11 +489,9 @@ app.post('/api/employees', async (req, res) => {
     }
 });
 
-// Edit employee
 app.put('/api/employees/:id', async (req, res) => {
     const { id } = req.params;
     const { name, department, employee_type } = req.body;
-    
     try {
         let deptId = null;
         if (department) {
@@ -670,11 +501,9 @@ app.put('/api/employees/:id', async (req, res) => {
             }
             deptId = deptResult.rows[0].id;
         }
-        
         let query = 'UPDATE employees SET ';
         const params = [];
         let paramCount = 1;
-        
         if (name) {
             query += `name = $${paramCount}, `;
             params.push(name);
@@ -690,11 +519,9 @@ app.put('/api/employees/:id', async (req, res) => {
             params.push(employee_type);
             paramCount++;
         }
-        
         query = query.slice(0, -2);
         query += ` WHERE id = $${paramCount}`;
         params.push(id);
-        
         await pool.query(query, params);
         res.json({ success: true, message: 'Employee updated successfully!' });
     } catch (error) {
@@ -703,10 +530,8 @@ app.put('/api/employees/:id', async (req, res) => {
     }
 });
 
-// Delete employee
 app.delete('/api/employees/:id', async (req, res) => {
     const { id } = req.params;
-    
     try {
         await pool.query('DELETE FROM break_log WHERE employee_id = $1', [id]);
         await pool.query('DELETE FROM employees WHERE id = $1', [id]);
@@ -721,10 +546,8 @@ app.delete('/api/employees/:id', async (req, res) => {
 // BREAK ROUTES
 // =============================================
 
-// Get active breaks with employee type and department
 app.get('/api/active-breaks', async (req, res) => {
     const employeeName = req.query.employeeName;
-    
     try {
         let query = `
             SELECT 
@@ -740,15 +563,12 @@ app.get('/api/active-breaks', async (req, res) => {
             JOIN departments d ON e.department_id = d.id
             WHERE b.break_in IS NULL AND b.break_date = CURRENT_DATE
         `;
-        
         const params = [];
-        
         if (employeeName) {
             const empResult = await pool.query(
                 'SELECT employee_type FROM employees WHERE name = $1',
                 [employeeName]
             );
-            
             if (empResult.rows.length > 0) {
                 const empType = empResult.rows[0].employee_type;
                 if (empType === 'expat') {
@@ -756,9 +576,7 @@ app.get('/api/active-breaks', async (req, res) => {
                 }
             }
         }
-        
         query += ` ORDER BY b.break_out ASC`;
-        
         const result = await pool.query(query, params);
         res.json(result.rows);
     } catch (error) {
@@ -767,10 +585,8 @@ app.get('/api/active-breaks', async (req, res) => {
     }
 });
 
-// Get break report with filters
 app.get('/api/break-report', async (req, res) => {
     const { employeeName, role } = req.query;
-    
     try {
         let query = `
             SELECT 
@@ -797,10 +613,8 @@ app.get('/api/break-report', async (req, res) => {
             JOIN departments d ON e.department_id = d.id
             WHERE 1=1
         `;
-        
         const params = [];
         let paramCount = 1;
-        
         if (role !== 'admin' && role !== 'sub-admin') {
             if (employeeName) {
                 query += ` AND e.name = $${paramCount}`;
@@ -808,9 +622,7 @@ app.get('/api/break-report', async (req, res) => {
                 paramCount++;
             }
         }
-        
         query += ` ORDER BY b.break_date DESC, b.break_out DESC LIMIT 1000`;
-        
         const result = await pool.query(query, params);
         res.json(result.rows);
     } catch (error) {
@@ -819,10 +631,8 @@ app.get('/api/break-report', async (req, res) => {
     }
 });
 
-// Get breaks for specific employee
 app.get('/api/breaks/:employeeId', async (req, res) => {
     const { employeeId } = req.params;
-    
     try {
         const query = `
             WITH daily_breaks AS (
@@ -893,10 +703,8 @@ app.get('/api/breaks/:employeeId', async (req, res) => {
     }
 });
 
-// Check active break
 app.get('/api/active-break/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
-    
     try {
         const query = `
             SELECT 
@@ -920,35 +728,29 @@ app.get('/api/active-break/:employeeName', async (req, res) => {
     }
 });
 
-// Start break
 app.post('/api/break-out', async (req, res) => {
     const { employeeName, breakDate, breakOut } = req.body;
-    
     try {
         let employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
         if (employee.rows.length === 0) {
             return res.status(404).json({ error: 'Employee not found' });
         }
-        
         const employeeId = employee.rows[0].id;
         const activeBreak = await pool.query(
             `SELECT id FROM break_log 
              WHERE employee_id = $1 AND break_date = $2 AND break_in IS NULL`,
             [employeeId, breakDate]
         );
-        
         if (activeBreak.rows.length > 0) {
             return res.status(400).json({ 
                 error: 'Employee already has an active break! Please click In first.' 
             });
         }
-        
         await pool.query(
             `INSERT INTO break_log (employee_id, break_date, break_out) 
              VALUES ($1, $2, $3)`,
             [employeeId, breakDate, breakOut]
         );
-        
         res.json({ 
             success: true, 
             message: `✅ ${employeeName} started break at ${breakOut}` 
@@ -959,16 +761,13 @@ app.post('/api/break-out', async (req, res) => {
     }
 });
 
-// End break
 app.post('/api/break-in', async (req, res) => {
     const { employeeName, breakDate, breakIn } = req.body;
-    
     try {
         const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
         if (employee.rows.length === 0) {
             return res.status(404).json({ error: 'Employee not found' });
         }
-        
         const employeeId = employee.rows[0].id;
         const activeBreak = await pool.query(
             `SELECT id, break_out FROM break_log 
@@ -977,21 +776,17 @@ app.post('/api/break-in', async (req, res) => {
              LIMIT 1`,
             [employeeId, breakDate]
         );
-        
         if (activeBreak.rows.length === 0) {
             return res.status(400).json({ 
                 error: 'No active break found! Please click Break first.' 
             });
         }
-        
         const breakId = activeBreak.rows[0].id;
         await pool.query(`UPDATE break_log SET break_in = $1 WHERE id = $2`, [breakIn, breakId]);
-        
         const duration = await pool.query(
             `SELECT (break_in - break_out) AS duration FROM break_log WHERE id = $1`,
             [breakId]
         );
-        
         res.json({ 
             success: true, 
             message: `✅ ${employeeName} ended break at ${breakIn}`,
@@ -1003,10 +798,8 @@ app.post('/api/break-in', async (req, res) => {
     }
 });
 
-// Delete break
 app.delete('/api/breaks/:id', async (req, res) => {
     const { id } = req.params;
-    
     try {
         await pool.query('DELETE FROM break_log WHERE id = $1', [id]);
         res.json({ success: true, message: 'Break deleted successfully!' });
@@ -1016,10 +809,8 @@ app.delete('/api/breaks/:id', async (req, res) => {
     }
 });
 
-// Get today's summary
 app.get('/api/today/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
-    
     try {
         const query = `
             SELECT 
@@ -1044,8 +835,6 @@ app.get('/api/today/:employeeName', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📊 Open your app in browser`);
     console.log(`👑 Main Admin: admin / 535680`);
     console.log(`📦 Database: PostgreSQL`);
-    console.log(`🔧 Migration available at: /api/migrate (run once!)`);
 });
