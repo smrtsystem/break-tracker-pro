@@ -151,6 +151,11 @@ body {
     color: #6c757d;
 }
 
+/* Settings Tab - Only Admin */
+#settingsTab {
+    display: none;
+}
+
 /* ===== CONTAINER ===== */
 .container {
     max-width: 1400px;
