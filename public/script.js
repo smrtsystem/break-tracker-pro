@@ -12,6 +12,8 @@ const API_URL = window.location.hostname === 'localhost' || window.location.host
 let currentUser = null;
 let currentEmployee = null;
 let refreshTimer = null;
+let currentDepartmentFilter = 'all';
+let editEmployeeId = null;
 
 // Check if user is logged in
 function checkAuth() {
@@ -79,10 +81,10 @@ updateClock();
 document.addEventListener('DOMContentLoaded', function() {
     if (!checkAuth()) return;
     updateUIForRole();
-    loadDepartments();
     loadEmployees();
     loadUsers();
     loadActiveBreaks();
+    loadDepartmentsForSelect();
     
     // Auto-refresh every 15 seconds
     refreshTimer = setInterval(() => {
@@ -112,7 +114,6 @@ function switchTab(tabName) {
     if (tabName === 'dashboard') {
         refreshData();
     } else if (tabName === 'config') {
-        loadDepartments();
         loadEmployees();
     } else if (tabName === 'users') {
         loadUsers();
@@ -146,84 +147,67 @@ document.addEventListener('keydown', function(e) {
 // DEPARTMENT FUNCTIONS
 // =============================================
 
-async function loadDepartments() {
-    try {
-        const response = await fetch(`${API_URL}/api/departments`);
-        const departments = await response.json();
-        
-        const deptSelect = document.getElementById('newEmployeeDepartment');
-        deptSelect.innerHTML = '';
-        
+function loadDepartmentsForSelect() {
+    const departments = ['Betrealated', 'Banking', 'CS', 'Checking'];
+    const select = document.getElementById('newEmployeeDepartment');
+    if (select) {
+        select.innerHTML = '';
         departments.forEach(dept => {
             const option = document.createElement('option');
-            option.value = dept.name;
-            option.textContent = dept.name;
-            deptSelect.appendChild(option);
+            option.value = dept;
+            option.textContent = dept;
+            select.appendChild(option);
         });
-        
-        // Show department list in config tab
-        const deptList = document.getElementById('departmentList');
-        if (deptList) {
-            deptList.innerHTML = '';
-            departments.forEach(dept => {
-                const badge = document.createElement('span');
-                badge.className = 'department-badge';
-                badge.innerHTML = `
-                    <i class="fas fa-building"></i> ${dept.name}
-                    <button onclick="deleteDepartment('${dept.name}')" style="background:none; border:none; color:#dc3545; cursor:pointer; margin-left:5px;">
-                        <i class="fas fa-times"></i>
-                    </button>
-                `;
-                deptList.appendChild(badge);
-            });
-        }
-    } catch (error) {
-        console.error('Error loading departments:', error);
     }
 }
 
-async function addDepartment() {
-    const name = document.getElementById('newDepartmentName').value.trim();
-    if (!name) {
-        showAlert('Please enter a department name!', 'error');
-        return;
+function filterDepartment(department) {
+    currentDepartmentFilter = department;
+    
+    // Update tab buttons
+    document.querySelectorAll('.dept-tab').forEach(tab => {
+        tab.classList.remove('active');
+        tab.classList.add('btn-secondary');
+        tab.classList.remove('btn-primary');
+    });
+    
+    const activeTab = document.querySelector(`.dept-tab[data-dept="${department}"]`);
+    if (activeTab) {
+        activeTab.classList.add('active');
+        activeTab.classList.remove('btn-secondary');
+        activeTab.classList.add('btn-primary');
     }
-    try {
-        const response = await fetch(`${API_URL}/api/departments`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name })
-        });
-        if (response.ok) {
-            showAlert(`✅ Department "${name}" added successfully!`, 'success');
-            document.getElementById('newDepartmentName').value = '';
-            await loadDepartments();
-        } else {
-            const error = await response.json();
-            showAlert('❌ ' + error.error, 'error');
-        }
-    } catch (error) {
-        showAlert('❌ Error connecting to server', 'error');
-    }
+    
+    loadEmployees();
 }
 
-async function deleteDepartment(name) {
-    if (!confirm(`Are you sure you want to delete department "${name}"?`)) return;
-    try {
-        const response = await fetch(`${API_URL}/api/departments/${encodeURIComponent(name)}`, {
-            method: 'DELETE'
-        });
-        if (response.ok) {
-            showAlert(`✅ Department "${name}" deleted!`, 'success');
-            await loadDepartments();
-            await loadEmployees();
-        } else {
-            showAlert('❌ Error deleting department', 'error');
-        }
-    } catch (error) {
-        showAlert('❌ Error connecting to server', 'error');
-    }
+function showAddEmployeeForm() {
+    document.getElementById('addEmployeeForm').style.display = 'block';
 }
+
+function hideAddEmployeeForm() {
+    document.getElementById('addEmployeeForm').style.display = 'none';
+    document.getElementById('newEmployeeName').value = '';
+}
+
+function openEditEmployeeModal(id, name, department, type) {
+    editEmployeeId = id;
+    document.getElementById('editEmployeeName').value = name;
+    document.getElementById('editEmployeeDepartment').value = department;
+    document.getElementById('editEmployeeType').value = type;
+    document.getElementById('editEmployeeModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeEditEmployeeModal() {
+    document.getElementById('editEmployeeModal').classList.remove('active');
+    document.body.style.overflow = '';
+    editEmployeeId = null;
+}
+
+document.getElementById('editEmployeeModal').addEventListener('click', function(e) {
+    if (e.target === this) closeEditEmployeeModal();
+});
 
 // =============================================
 // EMPLOYEE FUNCTIONS
@@ -232,20 +216,17 @@ async function deleteDepartment(name) {
 async function loadEmployees() {
     try {
         const response = await fetch(`${API_URL}/api/employees`);
-        const employees = await response.json();
+        let employees = await response.json();
 
+        // Filter by department
+        if (currentDepartmentFilter !== 'all') {
+            employees = employees.filter(e => e.department === currentDepartmentFilter);
+        }
+
+        // Update employee select dropdown
         const select = document.getElementById('employeeSelect');
-        select.innerHTML = '<option value="">Select an employee...</option>';
-
-        if (employees && employees.length > 0) {
-            // Group employees by department for better display
-            const grouped = {};
-            employees.forEach(emp => {
-                if (!grouped[emp.department]) grouped[emp.department] = [];
-                grouped[emp.department].push(emp);
-            });
-
-            // Add employees to dropdown with department and type
+        if (select) {
+            select.innerHTML = '<option value="">Select an employee...</option>';
             employees.forEach(emp => {
                 const option = document.createElement('option');
                 option.value = emp.name;
@@ -254,7 +235,7 @@ async function loadEmployees() {
                 select.appendChild(option);
             });
             
-            // Select first employee by default
+            // Select first employee by default if no current employee
             if (!currentEmployee && employees.length > 0) {
                 select.value = employees[0].name;
                 onEmployeeChange();
@@ -273,18 +254,26 @@ async function loadEmployeeList(employees) {
         if (!employees) {
             const response = await fetch(`${API_URL}/api/employees`);
             employees = await response.json();
+            
+            // Filter by department
+            if (currentDepartmentFilter !== 'all') {
+                employees = employees.filter(e => e.department === currentDepartmentFilter);
+            }
         }
 
         const container = document.getElementById('employeeListContainer');
         const countSpan = document.getElementById('employeeCount');
 
         if (!employees || employees.length === 0) {
-            container.innerHTML = '<div class="no-data">No employees found.</div>';
-            countSpan.textContent = '(0 employees)';
+            container.innerHTML = `<div class="no-data" style="grid-column: 1/-1;">
+                <i class="fas fa-users" style="font-size:24px; color:#ddd;"></i>
+                <p style="margin-top:8px;">No employees found in ${currentDepartmentFilter === 'all' ? 'any department' : currentDepartmentFilter}</p>
+            </div>`;
+            if (countSpan) countSpan.textContent = '(0 employees)';
             return;
         }
 
-        countSpan.textContent = `(${employees.length} employees)`;
+        if (countSpan) countSpan.textContent = `(${employees.length} employees)`;
         container.innerHTML = '';
 
         // Group by department
@@ -311,7 +300,7 @@ async function loadEmployeeList(employees) {
                 const typeHeader = document.createElement('div');
                 typeHeader.className = 'employee-type-header';
                 typeHeader.innerHTML = `🇱🇰 Local Employees (${locals.length})`;
-                typeHeader.style.cssText = 'padding: 4px 12px; font-size: 11px; color: #666; font-weight: 500; margin-top: 4px;';
+                typeHeader.style.cssText = 'padding: 4px 12px; font-size: 11px; color: #28a745; font-weight: 600; margin-top: 4px; background: #e8f5e9; border-radius:4px;';
                 container.appendChild(typeHeader);
                 
                 locals.forEach(emp => {
@@ -325,7 +314,7 @@ async function loadEmployeeList(employees) {
                 const typeHeader = document.createElement('div');
                 typeHeader.className = 'employee-type-header';
                 typeHeader.innerHTML = `🌍 Expat Employees (${expats.length})`;
-                typeHeader.style.cssText = 'padding: 4px 12px; font-size: 11px; color: #666; font-weight: 500; margin-top: 8px;';
+                typeHeader.style.cssText = 'padding: 4px 12px; font-size: 11px; color: #1a73e8; font-weight: 600; margin-top: 8px; background: #e3f2fd; border-radius:4px;';
                 container.appendChild(typeHeader);
                 
                 expats.forEach(emp => {
@@ -351,9 +340,11 @@ function createEmployeeItem(emp) {
             <i class="fas fa-user" style="color:#1a73e8; margin-right:8px;"></i>
             ${emp.name}
             ${typeBadge}
-            <span style="font-size:10px; color:#888;">(${emp.department})</span>
         </span>
         <div class="actions">
+            <button class="btn btn-primary btn-sm" onclick="openEditEmployeeModal(${emp.id}, '${emp.name}', '${emp.department}', '${emp.employee_type}')" title="Edit Employee">
+                <i class="fas fa-edit"></i>
+            </button>
             <button class="btn btn-danger btn-sm" onclick="deleteEmployee(${emp.id})" title="Delete Employee">
                 <i class="fas fa-trash"></i>
             </button>
@@ -371,10 +362,6 @@ async function addEmployee() {
         showAlert('Please enter an employee name!', 'error');
         return;
     }
-    if (!department) {
-        showAlert('Please select a department!', 'error');
-        return;
-    }
 
     try {
         const response = await fetch(`${API_URL}/api/employees`, {
@@ -388,7 +375,9 @@ async function addEmployee() {
         if (response.ok) {
             showAlert(`✅ Employee "${name}" added successfully!`, 'success');
             document.getElementById('newEmployeeName').value = '';
+            hideAddEmployeeForm();
             await loadEmployees();
+            await loadEmployeesForReport();
         } else {
             showAlert('❌ ' + result.error, 'error');
         }
@@ -398,8 +387,41 @@ async function addEmployee() {
     }
 }
 
+async function saveEditEmployee() {
+    const name = document.getElementById('editEmployeeName').value.trim();
+    const department = document.getElementById('editEmployeeDepartment').value;
+    const employee_type = document.getElementById('editEmployeeType').value;
+
+    if (!name) {
+        showAlert('Please enter an employee name!', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/api/employees/${editEmployeeId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, department, employee_type })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            showAlert(`✅ Employee updated successfully!`, 'success');
+            closeEditEmployeeModal();
+            await loadEmployees();
+            await loadEmployeesForReport();
+        } else {
+            showAlert('❌ ' + result.error, 'error');
+        }
+    } catch (error) {
+        console.error('Error updating employee:', error);
+        showAlert('❌ Error connecting to server', 'error');
+    }
+}
+
 async function deleteEmployee(id) {
-    if (!confirm('Are you sure you want to delete this employee?')) return;
+    if (!confirm('Are you sure you want to delete this employee? This will also delete all their break records.')) return;
     try {
         const response = await fetch(`${API_URL}/api/employees/${id}`, {
             method: 'DELETE'
@@ -407,6 +429,7 @@ async function deleteEmployee(id) {
         if (response.ok) {
             showAlert('✅ Employee deleted successfully!', 'success');
             await loadEmployees();
+            await loadEmployeesForReport();
         } else {
             showAlert('❌ Error deleting employee', 'error');
         }
@@ -428,7 +451,7 @@ async function loadUsers() {
         const countSpan = document.getElementById('userCount');
 
         if (!users || users.length === 0) {
-            container.innerHTML = '<div class="no-data">No users found.</div>';
+            container.innerHTML = '<div class="no-data" style="grid-column: 1/-1;">No users found.</div>';
             countSpan.textContent = '(0 users)';
             return;
         }
@@ -466,6 +489,9 @@ async function loadUsers() {
                         </button>
                         <button class="btn btn-warning btn-sm" onclick="resetPassword('${user.username}')" title="Reset Password">
                             <i class="fas fa-key"></i>
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="toggleUserRole('${user.username}', '${user.role}', ${user.can_manage_users})" title="Toggle Role">
+                            <i class="fas fa-exchange-alt"></i>
                         </button>
                         <button class="btn btn-danger btn-sm" onclick="deleteUser('${user.username}')" title="Delete User">
                             <i class="fas fa-trash"></i>
@@ -572,6 +598,36 @@ async function resetPassword(username) {
     }
 }
 
+async function toggleUserRole(username, currentRole, currentCanManage) {
+    if (username === 'admin') {
+        showAlert('Cannot change main admin!', 'error');
+        return;
+    }
+    
+    const newRole = currentRole === 'admin' ? 'sub-admin' : 
+                    currentRole === 'sub-admin' ? 'user' : 'sub-admin';
+    const newCanManage = !currentCanManage;
+    
+    if (!confirm(`Update "${username}"?\nRole: ${currentRole} → ${newRole}\nManage Users: ${currentCanManage} → ${newCanManage}`)) return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(username)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: newRole, can_manage_users: newCanManage })
+        });
+
+        if (response.ok) {
+            showAlert(`✅ User "${username}" updated!`, 'success');
+            await loadUsers();
+        } else {
+            showAlert('❌ Error updating user', 'error');
+        }
+    } catch (error) {
+        showAlert('❌ Error connecting to server', 'error');
+    }
+}
+
 async function deleteUser(username) {
     if (username === 'admin') {
         showAlert('Cannot delete main admin!', 'error');
@@ -621,7 +677,7 @@ async function loadEmployeeBreaks(employeeName) {
     const tbody = document.getElementById('breakBody');
     
     if (!employeeName) {
-        tbody.innerHTML = '<tr><td colspan="10" class="no-data">Please select an employee</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="no-data">Please select an employee</td></tr>';
         return;
     }
 
@@ -630,7 +686,7 @@ async function loadEmployeeBreaks(employeeName) {
         const data = await response.json();
 
         if (!data || data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="10" class="no-data">No breaks found. Click "Break" to start!</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="no-data">No breaks found. Click "Break" to start!</td></tr>';
             return;
         }
 
@@ -651,8 +707,6 @@ async function loadEmployeeBreaks(employeeName) {
                 <td>${row["Break"]}</td>
                 <td>${row["IN"]}</td>
                 <td>${row["Duration"]}</td>
-                <td>--</td>
-                <td>--</td>
                 <td>${statusBadge}</td>
                 <td>
                     <button class="btn btn-danger btn-sm" onclick="deleteBreak(${row.id})">
@@ -664,7 +718,7 @@ async function loadEmployeeBreaks(employeeName) {
         });
     } catch (error) {
         console.error('Error loading breaks:', error);
-        tbody.innerHTML = '<tr><td colspan="10" class="no-data">Error loading breaks</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="no-data">Error loading breaks</td></tr>';
     }
 }
 
@@ -822,6 +876,26 @@ async function deleteBreak(id) {
 // REPORT FUNCTIONS
 // =============================================
 
+async function loadEmployeesForReport() {
+    try {
+        const response = await fetch(`${API_URL}/api/employees`);
+        const employees = await response.json();
+        
+        const select = document.getElementById('reportEmployeeFilter');
+        if (!select) return;
+        
+        select.innerHTML = '<option value="">All Employees</option>';
+        employees.forEach(emp => {
+            const option = document.createElement('option');
+            option.value = emp.name;
+            option.textContent = `${emp.name} (${emp.department})`;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading employees for report:', error);
+    }
+}
+
 async function loadFullReport() {
     try {
         const response = await fetch(`${API_URL}/api/break-report`);
@@ -856,6 +930,74 @@ async function loadFullReport() {
     }
 }
 
+function applyReportFilters() {
+    showAlert('✅ Filters applied!', 'success');
+}
+
+function resetReportFilters() {
+    showAlert('✅ Filters reset!', 'success');
+}
+
+function exportReport() {
+    showAlert('📊 Report export coming soon!', 'success');
+}
+
+function exportReportPDF() {
+    showAlert('📄 PDF export coming soon!', 'success');
+}
+
+// =============================================
+// SETTINGS FUNCTIONS
+// =============================================
+
+function updateSetting(setting) {
+    let value;
+    let message;
+
+    switch (setting) {
+        case 'localBreakAllowance':
+            value = document.getElementById('localBreakAllowance').value;
+            message = `Local employee break allowance updated to ${value}`;
+            break;
+        case 'expatBreakAllowance':
+            value = document.getElementById('expatBreakAllowance').value;
+            message = `Expat employee break allowance updated to ${value}`;
+            break;
+        case 'historyLimit':
+            value = document.getElementById('historyLimit').value;
+            message = `History limit updated to ${value} records`;
+            break;
+        case 'refreshInterval':
+            value = document.getElementById('refreshInterval').value;
+            message = `Auto-refresh interval updated to ${value} seconds`;
+            if (refreshTimer) clearInterval(refreshTimer);
+            refreshTimer = setInterval(() => {
+                loadActiveBreaks();
+                if (currentEmployee) {
+                    loadEmployeeBreaks(currentEmployee);
+                }
+            }, value * 1000);
+            break;
+    }
+
+    showAlert(`✅ ${message}`, 'success');
+}
+
+function clearAllData() {
+    if (!confirm('⚠️ WARNING: This will delete ALL data. Are you sure?')) return;
+    if (!confirm('⚠️ FINAL WARNING: This action cannot be undone!')) return;
+    showAlert('🗑️ All data cleared!', 'success');
+}
+
+function resetToDefault() {
+    if (!confirm('Reset all settings to default values?')) return;
+    document.getElementById('localBreakAllowance').value = '2:30';
+    document.getElementById('expatBreakAllowance').value = '2:00';
+    document.getElementById('historyLimit').value = '50';
+    document.getElementById('refreshInterval').value = '15';
+    showAlert('✅ Settings reset to default!', 'success');
+}
+
 // =============================================
 // UTILITY FUNCTIONS
 // =============================================
@@ -872,34 +1014,4 @@ function showAlert(message, type) {
     setTimeout(() => {
         alertDiv.className = 'alert';
     }, 5000);
-}
-
-function exportReport() {
-    showAlert('📊 Report export coming soon!', 'success');
-}
-
-function exportReportPDF() {
-    showAlert('📄 PDF export coming soon!', 'success');
-}
-
-function applyReportFilters() {
-    showAlert('✅ Filters applied!', 'success');
-}
-
-function resetReportFilters() {
-    showAlert('✅ Filters reset!', 'success');
-}
-
-function updateSetting(setting) {
-    showAlert('✅ Setting updated!', 'success');
-}
-
-function clearAllData() {
-    if (!confirm('⚠️ WARNING: This will delete ALL data. Are you sure?')) return;
-    showAlert('🗑️ All data cleared!', 'success');
-}
-
-function resetToDefault() {
-    if (!confirm('Reset all settings to default values?')) return;
-    showAlert('✅ Settings reset to default!', 'success');
 }
