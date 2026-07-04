@@ -163,26 +163,6 @@
             color: #1a73e8;
         }
 
-        .default-creds {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 12px 16px;
-            margin-top: 15px;
-            font-size: 12px;
-            color: #666;
-            border: 1px dashed #dee2e6;
-        }
-
-        .default-creds code {
-            display: block;
-            margin: 4px 0;
-            background: white;
-            padding: 4px 10px;
-            border-radius: 4px;
-            font-family: 'Inter', monospace;
-            font-size: 12px;
-        }
-
         .loading-spinner {
             display: inline-block;
             width: 16px;
@@ -240,7 +220,7 @@
                 <i class="fas fa-sign-in-alt"></i> Sign In
             </button>
         </form>
-        
+
         <div class="login-footer">
             &copy; 2026 Break Tracker Pro. All rights reserved.
         </div>
@@ -284,7 +264,7 @@
                 }
             } catch (error) {
                 console.error('Login error:', error);
-                errorText.textContent = 'Error connecting to server. Make sure the server is running.';
+                errorText.textContent = 'Error connecting to server. Please try again.';
                 errorDiv.classList.add('show');
             } finally {
                 loginBtn.disabled = false;
