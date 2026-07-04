@@ -35,7 +35,6 @@ function checkAuth() {
 function updateUIForRole() {
     const isAdmin = currentUser && currentUser.role === 'admin';
     const isSubAdmin = currentUser && currentUser.role === 'sub-admin';
-    const isUser = currentUser && currentUser.role === 'user';
     
     // Admin-only elements (Full access)
     document.querySelectorAll('.admin-only').forEach(el => {
@@ -51,11 +50,6 @@ function updateUIForRole() {
     // Sub-admin only elements
     document.querySelectorAll('.subadmin-only').forEach(el => {
         el.style.display = (isAdmin || isSubAdmin) ? 'flex' : 'none';
-    });
-    
-    // Hide delete buttons for non-admin users
-    document.querySelectorAll('.break-delete-btn').forEach(el => {
-        el.style.display = isAdmin ? 'inline-flex' : 'none';
     });
     
     document.getElementById('userName').textContent = currentUser ? currentUser.username : 'Unknown';
@@ -99,7 +93,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadUsers();
     loadActiveBreaks();
     loadDepartmentsForSelect();
-    loadSettings(); // Load saved settings
+    loadSettings();
     
     refreshTimer = setInterval(() => {
         loadActiveBreaks();
@@ -540,7 +534,7 @@ async function loadUsers() {
                 <div class="actions" style="display:flex; gap:5px; flex-wrap:wrap;">
                     ${!isMainAdmin ? `
                         <button class="btn btn-primary btn-sm" onclick="editUsername('${user.username}')" title="Edit Username">
-                            <i class="fas fa-user-edit"></i>
+                            <i class="fas fa-user-edit</i>
                         </button>
                         <button class="btn btn-warning btn-sm" onclick="resetPassword('${user.username}')" title="Reset Password">
                             <i class="fas fa-key"></i>
@@ -704,7 +698,7 @@ async function deleteUser(username) {
 }
 
 // =============================================
-// SETTINGS FUNCTIONS - WITH PERSISTENT SAVE
+// SETTINGS FUNCTIONS
 // =============================================
 
 async function loadSettings() {
@@ -724,7 +718,6 @@ async function loadSettings() {
                 document.getElementById('historyLimit').value = value;
             } else if (key === 'refresh_interval') {
                 document.getElementById('refreshInterval').value = value;
-                // Update auto-refresh interval
                 if (refreshTimer) clearInterval(refreshTimer);
                 refreshTimer = setInterval(() => {
                     loadActiveBreaks();
@@ -818,7 +811,6 @@ function resetToDefault() {
     document.getElementById('historyLimit').value = '50';
     document.getElementById('refreshInterval').value = '15';
     
-    // Save all defaults
     for (const [key, value] of Object.entries(defaults)) {
         fetch(`${API_URL}/api/settings`, {
             method: 'POST',
@@ -889,7 +881,6 @@ async function loadEmployeeBreaks(employeeName) {
                 '<span class="badge badge-warning">⏳ On Break</span>' :
                 '<span class="badge badge-success">✅ Completed</span>';
 
-            // Only show delete button for Admin (not Sub-Admin)
             const deleteButton = isAdmin ? `
                 <button class="btn btn-danger btn-sm" onclick="deleteBreak(${row.id})">
                     <i class="fas fa-trash"></i>
@@ -924,14 +915,18 @@ async function loadActiveBreaks() {
         const badge = document.getElementById('activeCountBadge');
         const countSpan = document.getElementById('activeCount');
         const currentBreakCount = document.getElementById('currentBreakCount');
+        const headerActiveCount = document.getElementById('headerActiveCount');
 
         const count = data ? data.length : 0;
+        
+        // Update header badge
         if (badge) badge.innerHTML = `<i class="fas fa-users"></i> ${count} Active`;
+        if (headerActiveCount) headerActiveCount.textContent = count;
         if (countSpan) countSpan.textContent = `(${count})`;
         if (currentBreakCount) currentBreakCount.textContent = count;
 
         if (!data || data.length === 0) {
-            container.innerHTML = '<span style="color: #adb5bd; font-size:13px;">✅ No one is on break right now</span>';
+            container.innerHTML = '<span style="color: #adb5bd; font-size:16px;">✅ No one is on break right now</span>';
             return;
         }
 
@@ -943,9 +938,9 @@ async function loadActiveBreaks() {
             div.innerHTML = `
                 <span class="dot"></span>
                 <strong>${person.employee_name}</strong>
-                <span style="font-size:10px; background:#e9ecef; padding:1px 8px; border-radius:10px;">${person.department || 'N/A'}</span>
-                <span style="font-size:10px;">${typeIcon}</span>
-                <span style="font-size:11px; color:#888;">since ${person.break_out}</span>
+                <span style="font-size:12px; background:#e9ecef; padding:2px 12px; border-radius:12px;">${person.department || 'N/A'}</span>
+                <span style="font-size:12px;">${typeIcon}</span>
+                <span style="font-size:13px; color:#888;">since ${person.break_out}</span>
             `;
             container.appendChild(div);
         });
@@ -1072,12 +1067,11 @@ async function deleteBreak(id) {
 }
 
 // =============================================
-// REPORT FUNCTIONS - WITH PERMISSIONS
+// REPORT FUNCTIONS
 // =============================================
 
 async function loadFullReport() {
     try {
-        // For normal users, only fetch their own report
         let url = `${API_URL}/api/break-report`;
         if (currentUser && currentUser.role === 'user') {
             url += `?employeeName=${encodeURIComponent(currentUser.username)}`;
@@ -1086,7 +1080,6 @@ async function loadFullReport() {
         const response = await fetch(url);
         let data = await response.json();
         
-        // If user is not admin/sub-admin, filter to only show their own records
         if (currentUser && currentUser.role === 'user') {
             data = data.filter(row => row.employee_name === currentUser.username);
         }
@@ -1095,8 +1088,8 @@ async function loadFullReport() {
         if (!data || data.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="8" style="text-align: center; padding: 40px; color: #adb5bd; font-size: 14px;">
-                        <i class="fas fa-inbox" style="font-size: 32px; display: block; margin-bottom: 10px; color: #ddd;"></i>
+                    <td colspan="8" style="text-align: center; padding: 50px; color: #adb5bd; font-size: 16px;">
+                        <i class="fas fa-inbox" style="font-size: 32px; display: block; margin-bottom: 12px; color: #ddd;"></i>
                         No breaks found
                     </td>
                 </tr>
@@ -1109,20 +1102,20 @@ async function loadFullReport() {
         data.forEach(row => {
             const tr = document.createElement('tr');
             const statusBadge = row.status === 'On Break' ?
-                '<span class="badge badge-warning" style="padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; background: #fff3cd; color: #856404;">🔴 On Break</span>' :
-                '<span class="badge badge-success" style="padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; background: #d4edda; color: #155724;">✅ Completed</span>';
+                '<span class="badge badge-warning">🔴 On Break</span>' :
+                '<span class="badge badge-success">✅ Completed</span>';
             
             const typeIcon = row.employee_type === 'local' ? '🇱🇰 Local' : '🌍 Expat';
             
             tr.innerHTML = `
-                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;"><strong>${row.break_date}</strong></td>
-                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;"><strong>${row.employee_name}</strong></td>
-                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;">${row.department || '-'}</td>
-                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;">${typeIcon}</td>
-                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;">${row.break_out}</td>
-                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;">${row.break_in}</td>
-                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle; font-weight: 600;">${row.duration}</td>
-                <td style="padding: 12px 16px; border-bottom: 1px solid #f1f3f5; font-size: 13px; vertical-align: middle;">${statusBadge}</td>
+                <td><strong>${row.break_date}</strong></td>
+                <td><strong>${row.employee_name}</strong></td>
+                <td>${row.department || '-'}</td>
+                <td>${typeIcon}</td>
+                <td>${row.break_out}</td>
+                <td>${row.break_in}</td>
+                <td style="font-weight:600;">${row.duration}</td>
+                <td>${statusBadge}</td>
             `;
             
             if (row.status === 'On Break') {
@@ -1137,8 +1130,8 @@ async function loadFullReport() {
         console.error('Error loading report:', error);
         document.getElementById('reportBody').innerHTML = `
             <tr>
-                <td colspan="8" style="text-align: center; padding: 40px; color: #dc3545; font-size: 14px;">
-                    <i class="fas fa-exclamation-triangle" style="font-size: 32px; display: block; margin-bottom: 10px;"></i>
+                <td colspan="8" style="text-align: center; padding: 50px; color: #dc3545; font-size: 16px;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 32px; display: block; margin-bottom: 12px;"></i>
                     Error loading report
                 </td>
             </tr>
@@ -1176,16 +1169,11 @@ function applyReportFilters() {
         const rowDate = cells[0]?.textContent?.trim() || '';
         const rowStatus = cells[7]?.textContent?.trim() || '';
         
-        // For normal users, force filter to only show their own records
         if (currentUser && currentUser.role === 'user') {
-            if (rowEmployee !== currentUser.username) {
-                show = false;
-            }
+            if (rowEmployee !== currentUser.username) show = false;
         }
         
-        if (employeeFilter && rowEmployee !== employeeFilter) {
-            show = false;
-        }
+        if (employeeFilter && rowEmployee !== employeeFilter) show = false;
         
         if (dateFrom && rowDate) {
             const rowDateObj = new Date(rowDate);
@@ -1236,13 +1224,10 @@ function resetReportFilters() {
         const cells = row.querySelectorAll('td');
         if (cells.length < 8) return;
         
-        // For normal users, only show their own records
         let show = true;
         if (currentUser && currentUser.role === 'user') {
             const rowEmployee = cells[1]?.textContent?.trim() || '';
-            if (rowEmployee !== currentUser.username) {
-                show = false;
-            }
+            if (rowEmployee !== currentUser.username) show = false;
         }
         
         row.style.display = show ? '' : 'none';
@@ -1273,16 +1258,7 @@ function exportReport() {
         if (cells.length < 8) return;
         
         count++;
-        const date = cells[0]?.textContent?.trim() || '';
-        const employee = cells[1]?.textContent?.trim() || '';
-        const department = cells[2]?.textContent?.trim() || '';
-        const type = cells[3]?.textContent?.trim() || '';
-        const breakOut = cells[4]?.textContent?.trim() || '';
-        const breakIn = cells[5]?.textContent?.trim() || '';
-        const duration = cells[6]?.textContent?.trim() || '';
-        const status = cells[7]?.textContent?.trim() || '';
-        
-        csv += `${date},${employee},${department},${type},${breakOut},${breakIn},${duration},${status}\n`;
+        csv += `${cells[0]?.textContent?.trim() || ''},${cells[1]?.textContent?.trim() || ''},${cells[2]?.textContent?.trim() || ''},${cells[3]?.textContent?.trim() || ''},${cells[4]?.textContent?.trim() || ''},${cells[5]?.textContent?.trim() || ''},${cells[6]?.textContent?.trim() || ''},${cells[7]?.textContent?.trim() || ''}\n`;
     });
     
     if (count === 0) {
@@ -1305,7 +1281,6 @@ function exportReportPDF() {
     const rows = document.querySelectorAll('#reportBody tr');
     let visibleCount = 0;
     
-    // Count visible rows
     rows.forEach(row => {
         if (row.style.display !== 'none') {
             const cells = row.querySelectorAll('td');
@@ -1330,14 +1305,14 @@ function exportReportPDF() {
         const statusColor = cells[7]?.textContent?.includes('On Break') ? '#dc3545' : '#28a745';
         tableRows += `
             <tr>
-                <td style="padding:8px 10px; border-bottom:1px solid #ddd;">${cells[0]?.textContent?.trim() || ''}</td>
-                <td style="padding:8px 10px; border-bottom:1px solid #ddd;">${cells[1]?.textContent?.trim() || ''}</td>
-                <td style="padding:8px 10px; border-bottom:1px solid #ddd;">${cells[2]?.textContent?.trim() || ''}</td>
-                <td style="padding:8px 10px; border-bottom:1px solid #ddd;">${cells[3]?.textContent?.trim() || ''}</td>
-                <td style="padding:8px 10px; border-bottom:1px solid #ddd;">${cells[4]?.textContent?.trim() || ''}</td>
-                <td style="padding:8px 10px; border-bottom:1px solid #ddd;">${cells[5]?.textContent?.trim() || ''}</td>
-                <td style="padding:8px 10px; border-bottom:1px solid #ddd; font-weight:600;">${cells[6]?.textContent?.trim() || ''}</td>
-                <td style="padding:8px 10px; border-bottom:1px solid #ddd; color:${statusColor}; font-weight:bold;">${cells[7]?.textContent?.trim() || ''}</td>
+                <td>${cells[0]?.textContent?.trim() || ''}</td>
+                <td>${cells[1]?.textContent?.trim() || ''}</td>
+                <td>${cells[2]?.textContent?.trim() || ''}</td>
+                <td>${cells[3]?.textContent?.trim() || ''}</td>
+                <td>${cells[4]?.textContent?.trim() || ''}</td>
+                <td>${cells[5]?.textContent?.trim() || ''}</td>
+                <td style="font-weight:600;">${cells[6]?.textContent?.trim() || ''}</td>
+                <td style="color:${statusColor}; font-weight:bold;">${cells[7]?.textContent?.trim() || ''}</td>
             </tr>
         `;
     });
@@ -1358,57 +1333,37 @@ function exportReportPDF() {
                 .summary { margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #1a73e8; }
                 .footer { margin-top: 30px; text-align: center; color: #888; font-size: 12px; border-top: 1px solid #ddd; padding-top: 15px; }
                 .no-print { display: none; }
-                @media print {
-                    .no-print { display: none; }
-                    body { padding: 10px; }
-                }
+                @media print { .no-print { display: none; } body { padding: 10px; } }
             </style>
         </head>
         <body>
             <h1>📊 Complete Break Report</h1>
             <div class="subtitle">Generated: ${date}</div>
-            
             <div class="summary">
                 <strong>Summary:</strong> 
                 Total Records: ${document.getElementById('reportTotalRecords')?.textContent || 0} | 
                 Completed: ${document.getElementById('reportCompletedCount')?.textContent || 0} | 
                 On Break: ${document.getElementById('reportActiveCount')?.textContent || 0}
             </div>
-            
             <table>
                 <thead>
                     <tr>
-                        <th>Date</th>
-                        <th>Employee</th>
-                        <th>Department</th>
-                        <th>Type</th>
-                        <th>Break Out</th>
-                        <th>Break In</th>
-                        <th>Duration</th>
-                        <th>Status</th>
+                        <th>Date</th><th>Employee</th><th>Department</th>
+                        <th>Type</th><th>Break Out</th><th>Break In</th>
+                        <th>Duration</th><th>Status</th>
                     </tr>
                 </thead>
-                <tbody>
-                    ${tableRows || '<tr><td colspan="8" style="text-align:center;">No data available</td></tr>'}
-                </tbody>
+                <tbody>${tableRows}</tbody>
             </table>
-            
-            <div class="footer">
-                &copy; ${new Date().getFullYear()} Break Tracker Pro - All Rights Reserved
-            </div>
+            <div class="footer">&copy; ${new Date().getFullYear()} Break Tracker Pro - All Rights Reserved</div>
             <div class="no-print" style="margin-top:20px; text-align:center;">
-                <button onclick="window.print()" style="padding:10px 30px; background:#1a73e8; color:white; border:none; border-radius:5px; cursor:pointer; font-size:14px;">
-                    🖨️ Print / Save as PDF
-                </button>
-                <button onclick="window.close()" style="padding:10px 30px; background:#6c757d; color:white; border:none; border-radius:5px; cursor:pointer; font-size:14px; margin-left:10px;">
-                    ❌ Close
-                </button>
+                <button onclick="window.print()" style="padding:10px 30px; background:#1a73e8; color:white; border:none; border-radius:5px; cursor:pointer; font-size:14px;">🖨️ Print / Save as PDF</button>
+                <button onclick="window.close()" style="padding:10px 30px; background:#6c757d; color:white; border:none; border-radius:5px; cursor:pointer; font-size:14px; margin-left:10px;">❌ Close</button>
             </div>
         </body>
         </html>
     `);
     printWindow.document.close();
-    
     showAlert(`✅ ${visibleCount} records exported to PDF!`, 'success');
 }
 
