@@ -206,6 +206,36 @@ async function runAutoMigration() {
             CREATE INDEX IF NOT EXISTS idx_employees_type ON employees(employee_type);
         `);
 
+        // 9. Create system_settings table for persistent settings
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS system_settings (
+                id SERIAL PRIMARY KEY,
+                setting_key VARCHAR(50) NOT NULL UNIQUE,
+                setting_value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('✅ System settings table ready');
+
+        // 10. Insert default settings if not exist
+        const settingsCheck = await client.query('SELECT COUNT(*) FROM system_settings');
+        if (parseInt(settingsCheck.rows[0].count) === 0) {
+            const defaults = [
+                { key: 'local_break_allowance', value: '2:30' },
+                { key: 'expat_break_allowance', value: '2:00' },
+                { key: 'history_limit', value: '50' },
+                { key: 'refresh_interval', value: '15' }
+            ];
+            
+            for (const setting of defaults) {
+                await client.query(
+                    'INSERT INTO system_settings (setting_key, setting_value) VALUES ($1, $2)',
+                    [setting.key, setting.value]
+                );
+            }
+            console.log('✅ Default settings inserted');
+        }
+
         console.log('✅ Database migration completed successfully!');
     } catch (error) {
         console.error('❌ Migration error:', error.message);
@@ -268,6 +298,41 @@ app.get('/api/db-test', async (req, res) => {
             success: false,
             error: error.message
         });
+    }
+});
+
+// =============================================
+// SETTINGS ROUTES
+// =============================================
+
+// Get all settings
+app.get('/api/settings', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM system_settings');
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error fetching settings:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update setting
+app.post('/api/settings', async (req, res) => {
+    const { setting_key, setting_value } = req.body;
+    
+    try {
+        await pool.query(
+            `INSERT INTO system_settings (setting_key, setting_value) 
+             VALUES ($1, $2) 
+             ON CONFLICT (setting_key) 
+             DO UPDATE SET setting_value = $2, updated_at = CURRENT_TIMESTAMP`,
+            [setting_key, setting_value]
+        );
+        
+        res.json({ success: true, message: 'Setting updated successfully!' });
+    } catch (error) {
+        console.error('Error updating setting:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -856,8 +921,10 @@ app.get('/api/today/:employeeName', async (req, res) => {
 // =============================================
 
 app.get('/api/break-report', async (req, res) => {
+    const { employeeName } = req.query;
+    
     try {
-        const query = `
+        let query = `
             SELECT 
                 e.name AS employee_name,
                 e.employee_type,
@@ -879,10 +946,22 @@ app.get('/api/break-report', async (req, res) => {
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
             JOIN departments d ON e.department_id = d.id
-            ORDER BY b.break_date DESC, b.break_out DESC
-            LIMIT 500
+            WHERE 1=1
         `;
-        const result = await pool.query(query);
+        
+        const params = [];
+        let paramCount = 1;
+        
+        // If employeeName is provided, filter by it
+        if (employeeName) {
+            query += ` AND e.name = $${paramCount}`;
+            params.push(employeeName);
+            paramCount++;
+        }
+        
+        query += ` ORDER BY b.break_date DESC, b.break_out DESC LIMIT 500`;
+        
+        const result = await pool.query(query, params);
         res.json(result.rows);
     } catch (error) {
         console.error('Error in /api/break-report:', error);
