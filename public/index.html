@@ -47,6 +47,21 @@
         <!-- Alert -->
         <div id="alert" class="alert"></div>
 
+        <!-- ===== BREAK ALERT BANNER ===== -->
+        <div id="breakAlertBanner" style="display:none; background: linear-gradient(135deg, #fff3cd 0%, #ffe69b 100%); border-left: 6px solid #ffc107; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(255, 193, 7, 0.3);">
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <div style="font-size: 28px;">🚨</div>
+                <div style="flex: 1;">
+                    <h3 style="color: #856404; margin: 0; font-size: 16px; font-weight: 700;" id="alertTitle">⚠️ Break Time Alert!</h3>
+                    <p style="color: #856404; margin: 4px 0 0 0; font-size: 14px;" id="alertMessage">Loading alerts...</p>
+                </div>
+                <button onclick="closeBreakAlert()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #856404;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="alertEmployeesList" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px;"></div>
+        </div>
+
         <!-- Navigation Tabs -->
         <div class="nav-tabs">
             <button class="nav-tab active" onclick="switchTab('dashboard')">
