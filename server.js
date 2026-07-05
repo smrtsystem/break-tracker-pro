@@ -800,7 +800,221 @@ app.get('/api/active-break/:employeeName', async (req, res) => {
     }
 });
 
-// Start break - BREAK OUT
+// =============================================
+// BREAK LIMIT CHECK FUNCTIONS
+// =============================================
+
+// Helper: Convert time string to minutes
+function timeToMinutes(timeStr) {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(':');
+    if (parts.length === 2) {
+        return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    } else if (parts.length === 3) {
+        return parseInt(parts[0]) * 60 + parseInt(parts[1]) + parseInt(parts[2]) / 60;
+    }
+    return 0;
+}
+
+// Helper: Convert minutes to time string
+function minutesToTime(minutes) {
+    const hrs = Math.floor(Math.abs(minutes));
+    const mins = Math.round((Math.abs(minutes) - hrs) * 60);
+    const sign = minutes < 0 ? '-' : '';
+    return `${sign}${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+// Get employee's break allowance based on type
+async function getBreakAllowance(employeeName) {
+    try {
+        const empResult = await pool.query(
+            'SELECT employee_type FROM employees WHERE name = $1',
+            [employeeName]
+        );
+        
+        if (empResult.rows.length === 0) {
+            return '2:30';
+        }
+        
+        const empType = empResult.rows[0].employee_type;
+        const settingKey = empType === 'local' ? 'local_break_allowance' : 'expat_break_allowance';
+        const settingResult = await pool.query(
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1',
+            [settingKey]
+        );
+        
+        if (settingResult.rows.length > 0) {
+            return settingResult.rows[0].setting_value;
+        }
+        
+        return empType === 'local' ? '2:30' : '2:00';
+    } catch (error) {
+        console.error('Error getting break allowance:', error);
+        return '2:30';
+    }
+}
+
+// Get total break time used today
+async function getBreakTimeUsedToday(employeeName) {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                COALESCE(SUM(break_in - break_out), INTERVAL '0') AS total_used
+            FROM break_log b
+            JOIN employees e ON b.employee_id = e.id
+            WHERE e.name = $1 AND b.break_date = CURRENT_DATE AND b.break_in IS NOT NULL
+        `, [employeeName]);
+        
+        return result.rows[0].total_used || '00:00:00';
+    } catch (error) {
+        console.error('Error calculating break time used:', error);
+        return '00:00:00';
+    }
+}
+
+// Check if employee can take break
+async function canTakeBreak(employeeName) {
+    // 1. Check if already on break
+    const activeCheck = await pool.query(`
+        SELECT id FROM break_log b
+        JOIN employees e ON b.employee_id = e.id
+        WHERE e.name = $1 AND b.break_in IS NULL
+    `, [employeeName]);
+    
+    if (activeCheck.rows.length > 0) {
+        return { allowed: false, reason: 'Already on break! Please click "In" first.' };
+    }
+    
+    // 2. Check break allowance
+    const allowanceStr = await getBreakAllowance(employeeName);
+    const usedStr = await getBreakTimeUsedToday(employeeName);
+    
+    const allowanceMinutes = timeToMinutes(allowanceStr);
+    const usedMinutes = timeToMinutes(usedStr);
+    const remainingMinutes = allowanceMinutes - usedMinutes;
+    
+    if (remainingMinutes <= 0) {
+        return { 
+            allowed: false, 
+            reason: `❌ Break limit exceeded! You have used ${usedStr} out of ${allowanceStr}. No break time left.`,
+            used: usedStr,
+            allowance: allowanceStr,
+            remaining: '00:00'
+        };
+    }
+    
+    const remainingStr = minutesToTime(remainingMinutes);
+    
+    return { 
+        allowed: true, 
+        remaining: remainingStr,
+        used: usedStr,
+        allowance: allowanceStr
+    };
+}
+
+// =============================================
+// BREAK ALERT ROUTE
+// =============================================
+
+// Get all employees who have exceeded break limit
+app.get('/api/break-alerts', async (req, res) => {
+    try {
+        const employees = await pool.query(`
+            SELECT 
+                e.id,
+                e.name,
+                e.employee_type,
+                d.name as department
+            FROM employees e
+            JOIN departments d ON e.department_id = d.id
+        `);
+
+        const alerts = [];
+        const currentDate = new Date().toISOString().split('T')[0];
+
+        for (const emp of employees.rows) {
+            const settingKey = emp.employee_type === 'local' ? 'local_break_allowance' : 'expat_break_allowance';
+            const settingResult = await pool.query(
+                'SELECT setting_value FROM system_settings WHERE setting_key = $1',
+                [settingKey]
+            );
+            
+            let allowance = emp.employee_type === 'local' ? '2:30' : '2:00';
+            if (settingResult.rows.length > 0) {
+                allowance = settingResult.rows[0].setting_value;
+            }
+
+            const usedResult = await pool.query(`
+                SELECT 
+                    COALESCE(SUM(break_in - break_out), INTERVAL '0') AS total_used
+                FROM break_log b
+                WHERE b.employee_id = $1 AND b.break_date = $2 AND b.break_in IS NOT NULL
+            `, [emp.id, currentDate]);
+
+            const usedStr = usedResult.rows[0].total_used || '00:00:00';
+            
+            const activeResult = await pool.query(`
+                SELECT id FROM break_log 
+                WHERE employee_id = $1 AND break_in IS NULL
+            `, [emp.id]);
+
+            const isOnBreak = activeResult.rows.length > 0;
+
+            const allowanceMinutes = timeToMinutes(allowance);
+            const usedMinutes = timeToMinutes(usedStr);
+
+            const isExceeded = usedMinutes > allowanceMinutes;
+
+            let breakDetails = null;
+            if (isOnBreak) {
+                const breakResult = await pool.query(`
+                    SELECT 
+                        TO_CHAR(break_out, 'HH24:MI') as break_out,
+                        TO_CHAR(break_date, 'DD Mon YYYY') as break_date
+                    FROM break_log 
+                    WHERE employee_id = $1 AND break_in IS NULL
+                    ORDER BY break_out DESC
+                    LIMIT 1
+                `, [emp.id]);
+                if (breakResult.rows.length > 0) {
+                    breakDetails = breakResult.rows[0];
+                }
+            }
+
+            alerts.push({
+                employee_id: emp.id,
+                employee_name: emp.name,
+                employee_type: emp.employee_type,
+                department: emp.department,
+                allowance: allowance,
+                used: usedStr,
+                is_exceeded: isExceeded,
+                is_on_break: isOnBreak,
+                break_details: breakDetails,
+                exceeded_minutes: Math.round((usedMinutes - allowanceMinutes) * 10) / 10
+            });
+        }
+
+        const exceededAlerts = alerts.filter(a => a.is_exceeded === true);
+        
+        res.json({
+            success: true,
+            total_exceeded: exceededAlerts.length,
+            alerts: exceededAlerts,
+            all_employees: alerts
+        });
+    } catch (error) {
+        console.error('Error fetching break alerts:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// =============================================
+// BREAK OUT WITH LIMIT CHECK
+// =============================================
+
+// Start break - BREAK OUT (with limit check)
 app.post('/api/break-out', async (req, res) => {
     const { employeeName, breakDate, breakOut } = req.body;
     console.log('🔴 Break Out:', employeeName, breakDate, breakOut);
@@ -811,19 +1025,18 @@ app.post('/api/break-out', async (req, res) => {
             return res.status(404).json({ error: 'Employee not found' });
         }
         
-        const employeeId = employee.rows[0].id;
+        const checkResult = await canTakeBreak(employeeName);
         
-        const activeBreak = await pool.query(
-            `SELECT id FROM break_log 
-             WHERE employee_id = $1 AND break_in IS NULL`,
-            [employeeId]
-        );
-        
-        if (activeBreak.rows.length > 0) {
+        if (!checkResult.allowed) {
             return res.status(400).json({ 
-                error: 'Employee already on break! Please click In first.' 
+                error: checkResult.reason,
+                used: checkResult.used,
+                allowance: checkResult.allowance,
+                remaining: checkResult.remaining || '00:00'
             });
         }
+        
+        const employeeId = employee.rows[0].id;
         
         await pool.query(
             `INSERT INTO break_log (employee_id, break_date, break_out) 
@@ -831,16 +1044,30 @@ app.post('/api/break-out', async (req, res) => {
             [employeeId, breakDate, breakOut]
         );
         
+        const empTypeResult = await pool.query(
+            'SELECT employee_type FROM employees WHERE id = $1',
+            [employeeId]
+        );
+        const empType = empTypeResult.rows[0]?.employee_type || 'unknown';
+        
         console.log('✅ Break started for:', employeeName);
         res.json({ 
             success: true, 
-            message: `✅ ${employeeName} started break at ${breakOut}` 
+            message: `✅ ${employeeName} started break at ${breakOut}`,
+            remaining: checkResult.remaining,
+            used: checkResult.used,
+            allowance: checkResult.allowance,
+            employee_type: empType
         });
     } catch (error) {
         console.error('Error in /api/break-out:', error);
         res.status(500).json({ error: error.message });
     }
 });
+
+// =============================================
+// BREAK IN
+// =============================================
 
 // End break - BREAK IN
 app.post('/api/break-in', async (req, res) => {
@@ -917,6 +1144,43 @@ app.get('/api/today/:employeeName', async (req, res) => {
 });
 
 // =============================================
+// BREAK STATUS ROUTE
+// =============================================
+
+app.get('/api/break-status/:employeeName', async (req, res) => {
+    const { employeeName } = req.params;
+    
+    try {
+        const allowanceStr = await getBreakAllowance(employeeName);
+        const usedStr = await getBreakTimeUsedToday(employeeName);
+        
+        const allowanceMinutes = timeToMinutes(allowanceStr);
+        const usedMinutes = timeToMinutes(usedStr);
+        const remainingMinutes = allowanceMinutes - usedMinutes;
+        
+        const activeCheck = await pool.query(`
+            SELECT id FROM break_log b
+            JOIN employees e ON b.employee_id = e.id
+            WHERE e.name = $1 AND b.break_in IS NULL
+        `, [employeeName]);
+        
+        const isOnBreak = activeCheck.rows.length > 0;
+        
+        res.json({
+            employee_name: employeeName,
+            allowance: allowanceStr,
+            used: usedStr,
+            remaining: minutesToTime(Math.max(0, remainingMinutes)),
+            is_on_break: isOnBreak,
+            is_exceeded: remainingMinutes <= 0
+        });
+    } catch (error) {
+        console.error('Error checking break status:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// =============================================
 // REPORT ROUTE
 // =============================================
 
@@ -952,7 +1216,6 @@ app.get('/api/break-report', async (req, res) => {
         const params = [];
         let paramCount = 1;
         
-        // If employeeName is provided, filter by it
         if (employeeName) {
             query += ` AND e.name = $${paramCount}`;
             params.push(employeeName);
@@ -979,4 +1242,5 @@ app.listen(PORT, () => {
     console.log(`📦 Database: PostgreSQL`);
     console.log(`📊 Departments: Betrealated, Banking, CS, Checking`);
     console.log(`👥 Employee Types: Local & Expat`);
+    console.log(`🚨 Break Alert System: Active`);
 });
