@@ -14,6 +14,8 @@ let currentEmployee = null;
 let refreshTimer = null;
 let currentDepartmentFilter = 'all';
 let editEmployeeId = null;
+let breakAlerts = [];
+let alertInterval = null;
 
 // Check if user is logged in
 function checkAuth() {
@@ -36,18 +38,15 @@ function updateUIForRole() {
     const isAdmin = currentUser && currentUser.role === 'admin';
     const isSubAdmin = currentUser && currentUser.role === 'sub-admin';
     
-    // Admin-only elements (Full access)
     document.querySelectorAll('.admin-only').forEach(el => {
         el.style.display = (isAdmin || isSubAdmin) ? 'flex' : 'none';
     });
     
-    // Settings - Only Admin (not Sub-Admin)
     const settingsTab = document.getElementById('settingsTab');
     if (settingsTab) {
         settingsTab.style.display = isAdmin ? 'flex' : 'none';
     }
     
-    // Sub-admin only elements
     document.querySelectorAll('.subadmin-only').forEach(el => {
         el.style.display = (isAdmin || isSubAdmin) ? 'flex' : 'none';
     });
@@ -94,6 +93,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadActiveBreaks();
     loadDepartmentsForSelect();
     loadSettings();
+    initBreakAlerts();
     
     refreshTimer = setInterval(() => {
         loadActiveBreaks();
@@ -225,12 +225,10 @@ async function loadEmployees() {
         const response = await fetch(`${API_URL}/api/employees`);
         let employees = await response.json();
 
-        // Filter: Non-admin users only see themselves
         if (currentUser && currentUser.role === 'user') {
             employees = employees.filter(e => e.name === currentUser.username);
         }
 
-        // Department filter (only for admin/sub-admin)
         if (currentDepartmentFilter !== 'all' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'sub-admin')) {
             employees = employees.filter(e => e.department === currentDepartmentFilter);
         }
@@ -471,7 +469,6 @@ async function loadEmployeesForReport(employees) {
             employees = await response.json();
         }
         
-        // For normal users, only show themselves in report filter
         if (currentUser && currentUser.role === 'user') {
             employees = employees.filter(e => e.name === currentUser.username);
         }
@@ -800,14 +797,14 @@ function resetToDefault() {
     if (!confirm('Reset all settings to default values?')) return;
     
     const defaults = {
-        'local_break_allowance': '2:30',
-        'expat_break_allowance': '2:00',
+        'local_break_allowance': '1:00',
+        'expat_break_allowance': '2:30',
         'history_limit': '50',
         'refresh_interval': '15'
     };
     
-    document.getElementById('localBreakAllowance').value = '2:30';
-    document.getElementById('expatBreakAllowance').value = '2:00';
+    document.getElementById('localBreakAllowance').value = '1:00';
+    document.getElementById('expatBreakAllowance').value = '2:30';
     document.getElementById('historyLimit').value = '50';
     document.getElementById('refreshInterval').value = '15';
     
@@ -827,7 +824,139 @@ function resetToDefault() {
         }
     }, 15000);
     
-    showAlert('✅ Settings reset to default!', 'success');
+    showAlert('✅ Settings reset to default! (Local: 1:00, Expat: 2:30)', 'success');
+}
+
+// =============================================
+// BREAK ALERT FUNCTIONS
+// =============================================
+
+async function fetchBreakAlerts() {
+    try {
+        const response = await fetch(`${API_URL}/api/break-alerts`);
+        const data = await response.json();
+        
+        if (data.success) {
+            breakAlerts = data.alerts;
+            displayBreakAlerts(data);
+            return data;
+        }
+    } catch (error) {
+        console.error('Error fetching break alerts:', error);
+    }
+}
+
+function displayBreakAlerts(data) {
+    const banner = document.getElementById('breakAlertBanner');
+    const title = document.getElementById('alertTitle');
+    const message = document.getElementById('alertMessage');
+    const employeesList = document.getElementById('alertEmployeesList');
+    
+    if (!data.alerts || data.alerts.length === 0) {
+        banner.style.display = 'none';
+        return;
+    }
+    
+    banner.style.display = 'block';
+    
+    const count = data.alerts.length;
+    const exceedText = count === 1 ? 'employee has' : 'employees have';
+    
+    const localExceeded = data.alerts.filter(a => a.employee_type === 'local');
+    const expatExceeded = data.alerts.filter(a => a.employee_type === 'expat');
+    
+    let typeText = '';
+    if (localExceeded.length > 0 && expatExceeded.length > 0) {
+        typeText = `(Local: ${localExceeded.length} | Expat: ${expatExceeded.length})`;
+    } else if (localExceeded.length > 0) {
+        typeText = `(Local: ${localExceeded.length})`;
+    } else if (expatExceeded.length > 0) {
+        typeText = `(Expat: ${expatExceeded.length})`;
+    }
+    
+    title.textContent = `🚨 Break Time Alert! ${count} ${exceedText} exceeded their limit ${typeText}`;
+    message.textContent = `⚠️ These employees have exceeded their allowed break time for today. Please take action.`;
+    
+    employeesList.innerHTML = '';
+    data.alerts.forEach(alert => {
+        const card = document.createElement('div');
+        const isLocal = alert.employee_type === 'local';
+        const typeIcon = isLocal ? '🇱🇰' : '🌍';
+        const exceededMinutes = alert.exceeded_minutes || 0;
+        
+        card.style.cssText = `
+            background: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            border: 2px solid ${isLocal ? '#28a745' : '#dc3545'};
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            cursor: pointer;
+            transition: all 0.3s;
+        `;
+        
+        card.onmouseenter = function() {
+            this.style.transform = 'scale(1.03)';
+            this.style.boxShadow = '0 4px 15px rgba(0,0,0,0.15)';
+        };
+        card.onmouseleave = function() {
+            this.style.transform = 'scale(1)';
+            this.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
+        };
+        
+        card.innerHTML = `
+            <span>${typeIcon}</span>
+            <strong>${alert.employee_name}</strong>
+            <span style="font-size:11px; color:#888;">${alert.department}</span>
+            <span style="font-size:11px; background:#f8f9fa; padding:2px 10px; border-radius:12px;">
+                ⏱️ ${alert.used} / ${alert.allowance}
+            </span>
+            <span style="font-size:11px; color:#dc3545; font-weight:700;">
+                🔥 +${exceededMinutes}min
+            </span>
+            ${alert.is_on_break ? '<span style="font-size:10px; color:#dc3545;">🔴 On Break</span>' : ''}
+            <button onclick="event.stopPropagation(); selectEmployeeFromAlert('${alert.employee_name}')" 
+                    style="background:#1a73e8; color:white; border:none; border-radius:12px; padding:2px 12px; font-size:11px; cursor:pointer;">
+                View
+            </button>
+        `;
+        
+        card.onclick = function(e) {
+            if (!e.target.closest('button')) {
+                selectEmployeeFromAlert(alert.employee_name);
+            }
+        };
+        
+        employeesList.appendChild(card);
+    });
+}
+
+function selectEmployeeFromAlert(employeeName) {
+    const select = document.getElementById('employeeSelect');
+    for (let i = 0; i < select.options.length; i++) {
+        if (select.options[i].value === employeeName) {
+            select.selectedIndex = i;
+            onEmployeeChange();
+            showAlert(`✅ Selected: ${employeeName}`, 'success');
+            break;
+        }
+    }
+}
+
+function closeBreakAlert() {
+    document.getElementById('breakAlertBanner').style.display = 'none';
+}
+
+function initBreakAlerts() {
+    fetchBreakAlerts();
+    if (alertInterval) clearInterval(alertInterval);
+    alertInterval = setInterval(() => {
+        fetchBreakAlerts();
+    }, 30000);
 }
 
 // =============================================
@@ -851,7 +980,64 @@ async function onEmployeeChange() {
     document.getElementById('employeeNameTitle').textContent = employeeName;
 
     await loadEmployeeBreaks(employeeName);
-    await checkActiveBreak(employeeName);
+    await updateBreakStatus(employeeName);
+}
+
+async function updateBreakStatus(employeeName) {
+    try {
+        const response = await fetch(`${API_URL}/api/break-status/${encodeURIComponent(employeeName)}`);
+        const data = await response.json();
+        
+        const statusDisplay = document.getElementById('statusDisplay');
+        const breakOutBtn = document.getElementById('breakOutBtn');
+        const breakInBtn = document.getElementById('breakInBtn');
+        
+        if (data.is_on_break) {
+            statusDisplay.innerHTML = '🔴 Status: <strong style="color:#dc3545;">ON BREAK</strong>';
+            statusDisplay.style.background = '#ffebee';
+            statusDisplay.style.border = 'none';
+            breakOutBtn.disabled = true;
+            breakOutBtn.style.opacity = '0.5';
+            breakInBtn.disabled = false;
+            breakInBtn.style.opacity = '1';
+        } else if (data.is_exceeded) {
+            statusDisplay.innerHTML = '⛔ Status: <strong style="color:#dc3545;">LIMIT EXCEEDED</strong>';
+            statusDisplay.style.background = '#f8d7da';
+            statusDisplay.style.border = '2px solid #dc3545';
+            breakOutBtn.disabled = true;
+            breakOutBtn.style.opacity = '0.5';
+            breakInBtn.disabled = true;
+            breakInBtn.style.opacity = '0.5';
+        } else {
+            statusDisplay.innerHTML = `🟢 Status: <strong style="color:#28a745;">Available</strong> (${data.remaining} left)`;
+            statusDisplay.style.background = '#e8f5e9';
+            statusDisplay.style.border = 'none';
+            breakOutBtn.disabled = false;
+            breakOutBtn.style.opacity = '1';
+            breakInBtn.disabled = true;
+            breakInBtn.style.opacity = '0.5';
+        }
+        
+        const statsDiv = document.getElementById('stats');
+        if (statsDiv) {
+            let limitCard = statsDiv.querySelector('.stat-card.limit-card');
+            if (!limitCard) {
+                limitCard = document.createElement('div');
+                limitCard.className = 'stat-card limit-card';
+                limitCard.style.borderLeftColor = '#ffc107';
+                statsDiv.appendChild(limitCard);
+            }
+            limitCard.innerHTML = `
+                <div class="label">⏱️ Break Limit</div>
+                <div class="value ${data.is_exceeded ? 'danger' : 'success'}">${data.remaining} / ${data.allowance}</div>
+                <div style="font-size:10px; color:#888; margin-top:2px;">Used: ${data.used}</div>
+            `;
+        }
+        
+        return data;
+    } catch (error) {
+        console.error('Error updating break status:', error);
+    }
 }
 
 async function loadEmployeeBreaks(employeeName) {
@@ -935,7 +1121,6 @@ async function loadActiveBreaks() {
             div.className = 'active-person';
             const typeIcon = person.employee_type === 'local' ? '🇱🇰' : '🌍';
             
-            // Click on active break to select employee
             div.onclick = function() {
                 selectEmployee(person.employee_name);
             };
@@ -957,14 +1142,8 @@ async function loadActiveBreaks() {
     }
 }
 
-// =============================================
-// SELECT EMPLOYEE FROM ACTIVE BREAK
-// =============================================
-
 function selectEmployee(employeeName) {
     const select = document.getElementById('employeeSelect');
-    
-    // Find and select the employee in dropdown
     for (let i = 0; i < select.options.length; i++) {
         if (select.options[i].value === employeeName) {
             select.selectedIndex = i;
@@ -972,35 +1151,6 @@ function selectEmployee(employeeName) {
             showAlert(`✅ Selected: ${employeeName}`, 'success');
             break;
         }
-    }
-}
-
-async function checkActiveBreak(employeeName) {
-    try {
-        const response = await fetch(`${API_URL}/api/active-break/${encodeURIComponent(employeeName)}`);
-        const data = await response.json();
-
-        const statusDisplay = document.getElementById('statusDisplay');
-        const breakOutBtn = document.getElementById('breakOutBtn');
-        const breakInBtn = document.getElementById('breakInBtn');
-
-        if (data && data.id) {
-            statusDisplay.innerHTML = '🔴 Status: <strong style="color:#dc3545;">ON BREAK</strong>';
-            statusDisplay.style.background = '#ffebee';
-            breakOutBtn.disabled = true;
-            breakOutBtn.style.opacity = '0.5';
-            breakInBtn.disabled = false;
-            breakInBtn.style.opacity = '1';
-        } else {
-            statusDisplay.innerHTML = '🟢 Status: <strong style="color:#28a745;">Available</strong>';
-            statusDisplay.style.background = '#e8f5e9';
-            breakOutBtn.disabled = false;
-            breakOutBtn.style.opacity = '1';
-            breakInBtn.disabled = true;
-            breakInBtn.style.opacity = '0.5';
-        }
-    } catch (error) {
-        console.error('Error checking active break:', error);
     }
 }
 
@@ -1028,6 +1178,7 @@ async function breakOut() {
             showAlert(`✅ ${employeeName} started break at ${breakOut}`, 'success');
             await refreshData();
             await loadActiveBreaks();
+            await fetchBreakAlerts();
         } else {
             showAlert('❌ ' + result.error, 'error');
         }
@@ -1060,6 +1211,7 @@ async function breakIn() {
             showAlert(`✅ ${employeeName} ended break at ${breakIn}`, 'success');
             await refreshData();
             await loadActiveBreaks();
+            await fetchBreakAlerts();
         } else {
             showAlert('❌ ' + result.error, 'error');
         }
@@ -1069,7 +1221,6 @@ async function breakIn() {
 }
 
 async function deleteBreak(id) {
-    // Only Admin can delete breaks
     if (currentUser && currentUser.role !== 'admin') {
         showAlert('❌ Only Admin can delete break records!', 'error');
         return;
@@ -1084,6 +1235,7 @@ async function deleteBreak(id) {
             showAlert('✅ Break deleted successfully!', 'success');
             await refreshData();
             await loadActiveBreaks();
+            await fetchBreakAlerts();
         } else {
             showAlert('❌ Error deleting break', 'error');
         }
