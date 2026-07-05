@@ -16,6 +16,8 @@ let currentDepartmentFilter = 'all';
 let editEmployeeId = null;
 let breakAlerts = [];
 let alertInterval = null;
+let congratulationsMessage = null;
+let congratsInterval = null;
 
 // Check if user is logged in
 function checkAuth() {
@@ -94,6 +96,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadDepartmentsForSelect();
     loadSettings();
     initBreakAlerts();
+    initCongratulationsMessage();
     
     refreshTimer = setInterval(() => {
         loadActiveBreaks();
@@ -828,6 +831,97 @@ function resetToDefault() {
 }
 
 // =============================================
+// CONGRATULATIONS MESSAGE - SHOW ON HOMEPAGE
+// =============================================
+
+function initCongratulationsMessage() {
+    // Check for congratulations message every 5 seconds
+    if (congratsInterval) clearInterval(congratsInterval);
+    congratsInterval = setInterval(() => {
+        fetchCongratulationsMessage();
+    }, 5000);
+}
+
+async function fetchCongratulationsMessage() {
+    try {
+        // Get all employees who have exceeded limit
+        const response = await fetch(`${API_URL}/api/break-alerts`);
+        const data = await response.json();
+        
+        if (data.success && data.alerts && data.alerts.length > 0) {
+            // Get the first exceeded employee (or show all)
+            const exceeded = data.alerts;
+            let message = '';
+            
+            if (exceeded.length === 1) {
+                const emp = exceeded[0];
+                const typeLabel = emp.employee_type === 'local' ? 'Local' : 'Expat';
+                message = `🎉 Congratulations ${emp.employee_name}! You have exceeded the allowed break time. (${typeLabel} Employee)`;
+            } else {
+                const names = exceeded.map(e => e.employee_name).join(', ');
+                message = `🎉 Congratulations ${names}! You have exceeded the allowed break time.`;
+            }
+            
+            showHomepageCongratulations(message);
+        } else {
+            // Hide the congratulations banner if no one has exceeded
+            hideCongratulationsBanner();
+        }
+    } catch (error) {
+        console.error('Error fetching congratulations message:', error);
+    }
+}
+
+function showHomepageCongratulations(message) {
+    let banner = document.getElementById('congratulationsBanner');
+    
+    if (!banner) {
+        // Create the banner if it doesn't exist
+        banner = document.createElement('div');
+        banner.id = 'congratulationsBanner';
+        banner.style.cssText = `
+            background: linear-gradient(135deg, #fff3cd 0%, #ffe69b 100%);
+            border-left: 6px solid #ffc107;
+            border-radius: 12px;
+            padding: 16px 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(255, 193, 7, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: slideDown 0.5s ease;
+            position: relative;
+        `;
+        
+        // Insert after alert div
+        const alertDiv = document.getElementById('alert');
+        if (alertDiv && alertDiv.parentNode) {
+            alertDiv.parentNode.insertBefore(banner, alertDiv.nextSibling);
+        }
+    }
+    
+    banner.style.display = 'flex';
+    banner.innerHTML = `
+        <div style="font-size: 32px; flex-shrink: 0;">🎉</div>
+        <div style="flex: 1;">
+            <div style="font-size: 18px; font-weight: 700; color: #856404;">Congratulations!</div>
+            <div style="font-size: 15px; color: #856404; font-weight: 500;">${message}</div>
+            <div style="font-size: 12px; color: #856404; margin-top: 4px;">⚠️ You have exceeded your break limit. Please monitor your break time.</div>
+        </div>
+        <button onclick="hideCongratulationsBanner()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #856404; flex-shrink: 0;">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+}
+
+function hideCongratulationsBanner() {
+    const banner = document.getElementById('congratulationsBanner');
+    if (banner) {
+        banner.style.display = 'none';
+    }
+}
+
+// =============================================
 // BREAK ALERT FUNCTIONS
 // =============================================
 
@@ -971,8 +1065,9 @@ async function onEmployeeChange() {
     
     if (!employeeName) {
         document.getElementById('selectedEmployeeDisplay').value = 'None selected';
-        document.getElementById('statusDisplay').innerHTML = 'Status: Idle';
-        document.getElementById('statusDisplay').style.background = '#e9ecef';
+        document.getElementById('statusDisplay').innerHTML = '🟢 Status: <strong style="color:#28a745;">Available</strong>';
+        document.getElementById('statusDisplay').style.background = '#e8f5e9';
+        document.getElementById('statusDisplay').style.border = 'none';
         document.getElementById('employeeNameTitle').textContent = 'Select an employee';
         return;
     }
@@ -986,7 +1081,7 @@ async function onEmployeeChange() {
 }
 
 // =============================================
-// UPDATE BREAK STATUS - FIXED (Only show congratulations when exceeded)
+// UPDATE BREAK STATUS - No Break Limit Card, Status Always Available
 // =============================================
 
 async function updateBreakStatus(employeeName) {
@@ -1008,59 +1103,33 @@ async function updateBreakStatus(employeeName) {
             return;
         }
         
-        // Update status display
+        // ALWAYS show Status: Available (green) - no limit exceeded message in status
+        statusDisplay.innerHTML = '🟢 Status: <strong style="color:#28a745;">Available</strong>';
+        statusDisplay.style.background = '#e8f5e9';
+        statusDisplay.style.border = 'none';
+        statusDisplay.style.padding = '10px 16px';
+        statusDisplay.style.borderRadius = '10px';
+        
+        // Manage buttons
         if (data.is_on_break) {
-            statusDisplay.innerHTML = '🔴 Status: <strong style="color:#dc3545;">ON BREAK</strong>';
-            statusDisplay.style.background = '#ffebee';
-            statusDisplay.style.border = 'none';
             breakOutBtn.disabled = true;
             breakOutBtn.style.opacity = '0.5';
             breakInBtn.disabled = false;
             breakInBtn.style.opacity = '1';
-        } else if (data.is_exceeded) {
-            // ONLY SHOW CONGRATULATIONS WHEN EXCEEDED            const typeLabel = data.employee_type === 'local' ? 'Local' : 'Expat';
-            statusDisplay.innerHTML = `🎉 <strong style="color:#ff6b00;">Congratulations ${employeeName}!</strong><br><span style="font-size:12px; color:#856404;">You have exceeded the allowed break time. (${typeLabel} Employee)</span>`;
-            statusDisplay.style.background = '#fff3cd';
-            statusDisplay.style.border = '2px solid #ffc107';
-            statusDisplay.style.padding = '12px 16px';
-            statusDisplay.style.borderRadius = '12px';
-            breakOutBtn.disabled = false;  // Allow break even if exceeded
-            breakOutBtn.style.opacity = '1';
-            breakInBtn.disabled = true;
-            breakInBtn.style.opacity = '0.5';
-            // Show congratulations alert
-            showAlert(`🎉 Congratulations ${employeeName}! You have exceeded the allowed break time. (${typeLabel} Employee)`, 'warning');
         } else {
-            // Normal status - show remaining time
-            statusDisplay.innerHTML = `🟢 Status: <strong style="color:#28a745;">Available</strong> (${data.remaining || '00:00'} left)`;
-            statusDisplay.style.background = '#e8f5e9';
-            statusDisplay.style.border = 'none';
-            statusDisplay.style.padding = '10px 16px';
-            statusDisplay.style.borderRadius = '10px';
             breakOutBtn.disabled = false;
             breakOutBtn.style.opacity = '1';
             breakInBtn.disabled = true;
             breakInBtn.style.opacity = '0.5';
         }
         
-        // Update stats with break info - ALWAYS SHOW BREAK LIMIT
+        // REMOVE Break Limit Card from stats
         const statsDiv = document.getElementById('stats');
         if (statsDiv) {
-            let limitCard = statsDiv.querySelector('.stat-card.limit-card');
-            if (!limitCard) {
-                limitCard = document.createElement('div');
-                limitCard.className = 'stat-card limit-card';
-                limitCard.style.borderLeftColor = '#ffc107';
-                statsDiv.appendChild(limitCard);
+            const limitCard = statsDiv.querySelector('.stat-card.limit-card');
+            if (limitCard) {
+                limitCard.remove();
             }
-            
-            // Show break limit info (always show this)
-            limitCard.innerHTML = `
-                <div class="label">⏱️ Break Limit</div>
-                <div class="value ${data.is_exceeded ? 'danger' : 'success'}">${data.remaining || '00:00'} / ${data.allowance || '1:00'}</div>
-                <div style="font-size:10px; color:#888; margin-top:2px;">Used: ${data.used || '00:00'}</div>
-                ${data.is_exceeded ? `<div style="font-size:10px; color:#ff6b00; font-weight:600; margin-top:2px;">🎉 Exceeded!</div>` : ''}
-            `;
         }
         
         return data;
@@ -1207,11 +1276,11 @@ async function breakOut() {
         const result = await response.json();
 
         if (response.ok) {
-            // Show the message from server (which includes congratulations if exceeded)
             showAlert(result.message, result.is_exceeded ? 'warning' : 'success');
             await refreshData();
             await loadActiveBreaks();
             await fetchBreakAlerts();
+            await fetchCongratulationsMessage(); // Refresh congratulations message
         } else {
             showAlert('❌ ' + result.error, 'error');
         }
@@ -1245,6 +1314,7 @@ async function breakIn() {
             await refreshData();
             await loadActiveBreaks();
             await fetchBreakAlerts();
+            await fetchCongratulationsMessage(); // Refresh congratulations message
         } else {
             showAlert('❌ ' + result.error, 'error');
         }
@@ -1269,6 +1339,7 @@ async function deleteBreak(id) {
             await refreshData();
             await loadActiveBreaks();
             await fetchBreakAlerts();
+            await fetchCongratulationsMessage();
         } else {
             showAlert('❌ Error deleting break', 'error');
         }
