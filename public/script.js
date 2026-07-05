@@ -355,10 +355,10 @@ function createEmployeeItem(emp) {
     if (isAdmin) {
         actionsHtml = `
             <div class="actions">
-                <button class="btn btn-primary btn-sm" onclick="openEditEmployeeModal(${emp.id}, '${emp.name}', '${emp.department}', '${emp.employee_type}')" title="Edit Employee">
+                <button class="btn btn-primary btn-sm" onclick="openEditEmployeeModal(${emp.employee_id}, '${emp.name}', '${emp.department}', '${emp.employee_type}')" title="Edit Employee">
                     <i class="fas fa-edit"></i>
                 </button>
-                <button class="btn btn-danger btn-sm" onclick="deleteEmployee(${emp.id})" title="Delete Employee">
+                <button class="btn btn-danger btn-sm" onclick="deleteEmployee(${emp.employee_id})" title="Delete Employee">
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
@@ -986,11 +986,21 @@ async function onEmployeeChange() {
 async function updateBreakStatus(employeeName) {
     try {
         const response = await fetch(`${API_URL}/api/break-status/${encodeURIComponent(employeeName)}`);
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch break status');
+        }
+        
         const data = await response.json();
         
         const statusDisplay = document.getElementById('statusDisplay');
         const breakOutBtn = document.getElementById('breakOutBtn');
         const breakInBtn = document.getElementById('breakInBtn');
+        
+        if (!data) {
+            statusDisplay.innerHTML = 'Status: Unknown';
+            return;
+        }
         
         if (data.is_on_break) {
             statusDisplay.innerHTML = '🔴 Status: <strong style="color:#dc3545;">ON BREAK</strong>';
@@ -1009,7 +1019,7 @@ async function updateBreakStatus(employeeName) {
             breakInBtn.disabled = true;
             breakInBtn.style.opacity = '0.5';
         } else {
-            statusDisplay.innerHTML = `🟢 Status: <strong style="color:#28a745;">Available</strong> (${data.remaining} left)`;
+            statusDisplay.innerHTML = `🟢 Status: <strong style="color:#28a745;">Available</strong> (${data.remaining || '00:00'} left)`;
             statusDisplay.style.background = '#e8f5e9';
             statusDisplay.style.border = 'none';
             breakOutBtn.disabled = false;
@@ -1018,6 +1028,7 @@ async function updateBreakStatus(employeeName) {
             breakInBtn.style.opacity = '0.5';
         }
         
+        // Update stats with break info
         const statsDiv = document.getElementById('stats');
         if (statsDiv) {
             let limitCard = statsDiv.querySelector('.stat-card.limit-card');
@@ -1029,14 +1040,17 @@ async function updateBreakStatus(employeeName) {
             }
             limitCard.innerHTML = `
                 <div class="label">⏱️ Break Limit</div>
-                <div class="value ${data.is_exceeded ? 'danger' : 'success'}">${data.remaining} / ${data.allowance}</div>
-                <div style="font-size:10px; color:#888; margin-top:2px;">Used: ${data.used}</div>
+                <div class="value ${data.is_exceeded ? 'danger' : 'success'}">${data.remaining || '00:00'} / ${data.allowance || '1:00'}</div>
+                <div style="font-size:10px; color:#888; margin-top:2px;">Used: ${data.used || '00:00'}</div>
             `;
         }
         
         return data;
     } catch (error) {
         console.error('Error updating break status:', error);
+        const statusDisplay = document.getElementById('statusDisplay');
+        statusDisplay.innerHTML = '❌ Status: <strong style="color:#dc3545;">Error</strong>';
+        statusDisplay.style.background = '#f8d7da';
     }
 }
 
@@ -1068,7 +1082,7 @@ async function loadEmployeeBreaks(employeeName) {
                 '<span class="badge badge-success">✅ Completed</span>';
 
             const deleteButton = isAdmin ? `
-                <button class="btn btn-danger btn-sm" onclick="deleteBreak(${row.id})">
+                <button class="btn btn-danger btn-sm" onclick="deleteBreak(${row.break_id})">
                     <i class="fas fa-trash"></i>
                 </button>
             ` : `<span style="color:#888; font-size:11px;">-</span>`;
