@@ -860,7 +860,7 @@ app.post('/api/break-out', async (req, res) => {
         const empType = empTypeResult.rows[0]?.employee_type || 'unknown';
         const typeLabel = empType === 'local' ? 'Local' : 'Expat';
         
-        // Build message
+        // Build message - ONLY show congratulations if exceeded
         let message = `✅ ${employeeName} started break at ${breakOut}`;
         let isExceeded = checkResult.is_exceeded || false;
         
@@ -1012,6 +1012,7 @@ app.get('/api/break-status/:employeeName', async (req, res) => {
             remaining: minutesToTime(Math.max(0, remainingMinutes)),
             is_on_break: isOnBreak,
             is_exceeded: isExceeded,
+            // Only include message if exceeded
             message: isExceeded ? `🎉 Congratulations ${employeeName}! You have exceeded the allowed break time. (${typeLabel} Employee)` : null
         });
     } catch (error) {
@@ -1184,5 +1185,5 @@ app.listen(PORT, () => {
     console.log(`📊 Departments: Betrealated, Banking, CS, Checking`);
     console.log(`👥 Employee Types: Local & Expat`);
     console.log(`⏱️ Break Limits: Local 1:00, Expat 2:30`);
-    console.log(`🎉 Break Alert: Congratulations message on exceed`);
+    console.log(`🎉 Congratulations message only shows when limit exceeded`);
 });
