@@ -42,6 +42,44 @@ const pool = new Pool({
 });
 
 // =============================================
+// TIME HELPER FUNCTIONS - FIXED
+// =============================================
+
+// Helper: Convert time string (HH:MM or HH:MM:SS) to minutes
+function timeToMinutes(timeStr) {
+    if (!timeStr || typeof timeStr !== 'string') {
+        return 0;
+    }
+    
+    const clean = timeStr.trim();
+    const parts = clean.split(':');
+    
+    if (parts.length === 2) {
+        const hours = parseInt(parts[0]) || 0;
+        const minutes = parseInt(parts[1]) || 0;
+        return (hours * 60) + minutes;
+    } else if (parts.length === 3) {
+        const hours = parseInt(parts[0]) || 0;
+        const minutes = parseInt(parts[1]) || 0;
+        const seconds = parseInt(parts[2]) || 0;
+        return (hours * 60) + minutes + (seconds / 60);
+    }
+    
+    return 0;
+}
+
+// Helper: Convert minutes to time string (HH:MM)
+function minutesToTime(minutes) {
+    if (typeof minutes !== 'number' || isNaN(minutes) || minutes < 0) {
+        return '00:00';
+    }
+    
+    const hrs = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+// =============================================
 // AUTO-MIGRATION: Fix Database Schema on Startup
 // =============================================
 
@@ -804,26 +842,6 @@ app.get('/api/active-break/:employeeName', async (req, res) => {
 // BREAK LIMIT CHECK FUNCTIONS
 // =============================================
 
-// Helper: Convert time string to minutes
-function timeToMinutes(timeStr) {
-    if (!timeStr) return 0;
-    const parts = timeStr.split(':');
-    if (parts.length === 2) {
-        return parseInt(parts[0]) * 60 + parseInt(parts[1]);
-    } else if (parts.length === 3) {
-        return parseInt(parts[0]) * 60 + parseInt(parts[1]) + parseInt(parts[2]) / 60;
-    }
-    return 0;
-}
-
-// Helper: Convert minutes to time string
-function minutesToTime(minutes) {
-    const hrs = Math.floor(Math.abs(minutes));
-    const mins = Math.round((Math.abs(minutes) - hrs) * 60);
-    const sign = minutes < 0 ? '-' : '';
-    return `${sign}${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
-}
-
 // Get employee's break allowance based on type
 async function getBreakAllowance(employeeName) {
     try {
@@ -854,7 +872,7 @@ async function getBreakAllowance(employeeName) {
     }
 }
 
-// Get total break time used today
+// Get total break time used today - FIXED
 async function getBreakTimeUsedToday(employeeName) {
     try {
         const result = await pool.query(`
@@ -865,7 +883,27 @@ async function getBreakTimeUsedToday(employeeName) {
             WHERE e.name = $1 AND b.break_date = CURRENT_DATE AND b.break_in IS NOT NULL
         `, [employeeName]);
         
-        return result.rows[0].total_used || '00:00:00';
+        const totalUsed = result.rows[0].total_used;
+        
+        if (!totalUsed) {
+            return '00:00:00';
+        }
+        
+        // If it's a PostgreSQL interval object
+        if (typeof totalUsed === 'object' && totalUsed !== null) {
+            // Format: "HH:MM:SS"
+            const hours = totalUsed.hours || 0;
+            const minutes = totalUsed.minutes || 0;
+            const seconds = totalUsed.seconds || 0;
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+        
+        // If it's a string like "02:30:00"
+        if (typeof totalUsed === 'string') {
+            return totalUsed;
+        }
+        
+        return '00:00:00';
     } catch (error) {
         console.error('Error calculating break time used:', error);
         return '00:00:00';
@@ -1173,15 +1211,7 @@ app.get('/api/break-status/:employeeName', async (req, res) => {
         }
         
         // 3. Get total break time used today
-        const usedResult = await pool.query(`
-            SELECT 
-                COALESCE(SUM(b.break_in - b.break_out), INTERVAL '0') AS total_used
-            FROM break_log b
-            JOIN employees e ON b.employee_id = e.id
-            WHERE e.name = $1 AND b.break_date = CURRENT_DATE AND b.break_in IS NOT NULL
-        `, [employeeName]);
-        
-        const usedStr = usedResult.rows[0].total_used || '00:00:00';
+        const usedStr = await getBreakTimeUsedToday(employeeName);
         
         // 4. Check if currently on break
         const activeCheck = await pool.query(`
