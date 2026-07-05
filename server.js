@@ -42,7 +42,7 @@ const pool = new Pool({
 });
 
 // =============================================
-// TIME HELPER FUNCTIONS - FIXED
+// TIME HELPER FUNCTIONS
 // =============================================
 
 // Helper: Convert time string (HH:MM or HH:MM:SS) to minutes
@@ -80,7 +80,7 @@ function minutesToTime(minutes) {
 }
 
 // =============================================
-// AUTO-MIGRATION: Fix Database Schema on Startup
+// AUTO-MIGRATION
 // =============================================
 
 async function runAutoMigration() {
@@ -175,7 +175,7 @@ async function runAutoMigration() {
         `);
         console.log('✅ Admin user verified');
 
-        // 7. Insert sample employees by department with types
+        // 7. Insert sample employees
         const empCount = await client.query('SELECT COUNT(*) FROM employees');
         if (parseInt(empCount.rows[0].count) === 0) {
             console.log('🔧 Inserting sample employees...');
@@ -185,7 +185,6 @@ async function runAutoMigration() {
             depts.rows.forEach(d => { deptMap[d.name] = d.id; });
 
             const sampleEmployees = [
-                // ===== Betrealated Department =====
                 { name: 'ABRAHAM SIMANWA', dept: 'Betrealated', type: 'local' },
                 { name: 'CATHERINE NGOSA', dept: 'Betrealated', type: 'local' },
                 { name: 'COMFORT MITTI', dept: 'Betrealated', type: 'local' },
@@ -197,8 +196,6 @@ async function runAutoMigration() {
                 { name: 'JOHN SMITH', dept: 'Betrealated', type: 'expat' },
                 { name: 'MICHAEL BROWN', dept: 'Betrealated', type: 'expat' },
                 { name: 'ROBERT TAYLOR', dept: 'Betrealated', type: 'expat' },
-                
-                // ===== Banking Department =====
                 { name: 'ARUNAVA HAZRA', dept: 'Banking', type: 'local' },
                 { name: 'ASHISH MUSHLAM', dept: 'Banking', type: 'local' },
                 { name: 'AYUSH GUPTA', dept: 'Banking', type: 'local' },
@@ -206,16 +203,12 @@ async function runAutoMigration() {
                 { name: 'RAJESH SHARMA', dept: 'Banking', type: 'local' },
                 { name: 'DAVID WILSON', dept: 'Banking', type: 'expat' },
                 { name: 'SARAH JOHNSON', dept: 'Banking', type: 'expat' },
-                
-                // ===== CS Department =====
                 { name: 'VIKRAM SINGH', dept: 'CS', type: 'local' },
                 { name: 'ANANYA GUPTA', dept: 'CS', type: 'local' },
                 { name: 'SOUVIK NAG', dept: 'CS', type: 'local' },
                 { name: 'CHANDAN GUPTA', dept: 'CS', type: 'local' },
                 { name: 'JAMES ANDERSON', dept: 'CS', type: 'expat' },
                 { name: 'MARY WILLIAMS', dept: 'CS', type: 'expat' },
-                
-                // ===== Checking Department =====
                 { name: 'DEEPAK VERMA', dept: 'Checking', type: 'local' },
                 { name: 'KAVITA NAIR', dept: 'Checking', type: 'local' },
                 { name: 'LOKENDER SINGH', dept: 'Checking', type: 'local' },
@@ -234,17 +227,17 @@ async function runAutoMigration() {
                     );
                 }
             }
-            console.log('✅ Sample employees inserted with departments and types');
+            console.log('✅ Sample employees inserted');
         }
 
-        // 8. Create indexes for performance
+        // 8. Create indexes
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department_id);
             CREATE INDEX IF NOT EXISTS idx_employees_name ON employees(name);
             CREATE INDEX IF NOT EXISTS idx_employees_type ON employees(employee_type);
         `);
 
-        // 9. Create system_settings table for persistent settings
+        // 9. Create system_settings table
         await client.query(`
             CREATE TABLE IF NOT EXISTS system_settings (
                 id SERIAL PRIMARY KEY,
@@ -255,7 +248,7 @@ async function runAutoMigration() {
         `);
         console.log('✅ System settings table ready');
 
-        // 10. Insert default settings - Local: 1:00, Expat: 2:30
+        // 10. Insert default settings
         const settingsCheck = await client.query('SELECT COUNT(*) FROM system_settings');
         if (parseInt(settingsCheck.rows[0].count) === 0) {
             const defaults = [
@@ -292,9 +285,7 @@ async function connectDB() {
         try {
             const client = await pool.connect();
             console.log('✅ Connected to PostgreSQL successfully!');
-            
             await runAutoMigration();
-            
             client.release();
             return;
         } catch (err) {
@@ -343,7 +334,6 @@ app.get('/api/db-test', async (req, res) => {
 // SETTINGS ROUTES
 // =============================================
 
-// Get all settings
 app.get('/api/settings', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM system_settings');
@@ -354,10 +344,8 @@ app.get('/api/settings', async (req, res) => {
     }
 });
 
-// Update setting
 app.post('/api/settings', async (req, res) => {
     const { setting_key, setting_value } = req.body;
-    
     try {
         await pool.query(
             `INSERT INTO system_settings (setting_key, setting_value) 
@@ -366,7 +354,6 @@ app.post('/api/settings', async (req, res) => {
              DO UPDATE SET setting_value = $2, updated_at = CURRENT_TIMESTAMP`,
             [setting_key, setting_value]
         );
-        
         res.json({ success: true, message: 'Setting updated successfully!' });
     } catch (error) {
         console.error('Error updating setting:', error);
@@ -378,7 +365,6 @@ app.post('/api/settings', async (req, res) => {
 // DEPARTMENT ROUTES
 // =============================================
 
-// Get all departments
 app.get('/api/departments', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM departments ORDER BY name');
@@ -389,7 +375,6 @@ app.get('/api/departments', async (req, res) => {
     }
 });
 
-// Add department
 app.post('/api/departments', async (req, res) => {
     const { name } = req.body;
     try {
@@ -401,7 +386,6 @@ app.post('/api/departments', async (req, res) => {
     }
 });
 
-// Delete department
 app.delete('/api/departments/:name', async (req, res) => {
     const { name } = req.params;
     try {
@@ -422,7 +406,6 @@ app.delete('/api/departments/:name', async (req, res) => {
 // AUTHENTICATION ROUTES
 // =============================================
 
-// Login
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     console.log('🔐 Login attempt:', username);
@@ -459,7 +442,6 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// Get all users
 app.get('/api/users', async (req, res) => {
     try {
         const result = await pool.query(
@@ -472,27 +454,22 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
-// Add new user
 app.post('/api/users', async (req, res) => {
     const { username, password, role, can_manage_users } = req.body;
     try {
-        // Check if employee exists with this name
         const employeeCheck = await pool.query(
             'SELECT id FROM employees WHERE name = $1',
             [username]
         );
-        
         if (employeeCheck.rows.length === 0) {
             return res.status(400).json({ 
                 error: 'Employee not found! Please add employee first.' 
             });
         }
-        
         const existing = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
         if (existing.rows.length > 0) {
             return res.status(400).json({ error: 'Username already exists' });
         }
-        
         const result = await pool.query(
             `INSERT INTO users (username, password, role, can_manage_users) 
              VALUES ($1, $2, $3, $4) RETURNING id, username, role, can_manage_users`,
@@ -509,7 +486,6 @@ app.post('/api/users', async (req, res) => {
     }
 });
 
-// Update username
 app.put('/api/users/:oldUsername/username', async (req, res) => {
     const { oldUsername } = req.params;
     const { newUsername } = req.body;
@@ -529,7 +505,6 @@ app.put('/api/users/:oldUsername/username', async (req, res) => {
     }
 });
 
-// Reset password
 app.put('/api/users/:username/password', async (req, res) => {
     const { username } = req.params;
     const { newPassword, currentUser } = req.body;
@@ -545,7 +520,6 @@ app.put('/api/users/:username/password', async (req, res) => {
     }
 });
 
-// Update user role & permissions
 app.put('/api/users/:username', async (req, res) => {
     const { username } = req.params;
     const { role, can_manage_users } = req.body;
@@ -564,7 +538,6 @@ app.put('/api/users/:username', async (req, res) => {
     }
 });
 
-// Delete user
 app.delete('/api/users/:username', async (req, res) => {
     const { username } = req.params;
     try {
@@ -583,7 +556,6 @@ app.delete('/api/users/:username', async (req, res) => {
 // EMPLOYEE ROUTES
 // =============================================
 
-// Get all employees with department and type
 app.get('/api/employees', async (req, res) => {
     try {
         const query = `
@@ -599,7 +571,6 @@ app.get('/api/employees', async (req, res) => {
             ORDER BY d.name, e.employee_type DESC, e.name ASC
         `;
         const result = await pool.query(query);
-        console.log('✅ Employees fetched:', result.rows.length);
         res.json(result.rows);
     } catch (error) {
         console.error('Error in /api/employees:', error);
@@ -607,65 +578,14 @@ app.get('/api/employees', async (req, res) => {
     }
 });
 
-// Get employees by department
-app.get('/api/employees/department/:deptName', async (req, res) => {
-    const { deptName } = req.params;
-    try {
-        const query = `
-            SELECT 
-                e.id AS employee_id,
-                e.name,
-                e.employee_type,
-                d.name as department
-            FROM employees e
-            JOIN departments d ON e.department_id = d.id
-            WHERE d.name = $1
-            ORDER BY e.employee_type DESC, e.name ASC
-        `;
-        const result = await pool.query(query, [deptName]);
-        res.json(result.rows);
-    } catch (error) {
-        console.error('Error fetching employees by department:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Get employees by type
-app.get('/api/employees/type/:type', async (req, res) => {
-    const { type } = req.params;
-    try {
-        const query = `
-            SELECT 
-                e.id AS employee_id,
-                e.name,
-                e.employee_type,
-                d.name as department
-            FROM employees e
-            JOIN departments d ON e.department_id = d.id
-            WHERE e.employee_type = $1
-            ORDER BY d.name, e.name ASC
-        `;
-        const result = await pool.query(query, [type]);
-        res.json(result.rows);
-    } catch (error) {
-        console.error('Error fetching employees by type:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Add employee
 app.post('/api/employees', async (req, res) => {
     const { name, department, employee_type } = req.body;
-    console.log('📝 Adding employee:', { name, department, employee_type });
-    
     try {
         const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [department]);
         if (deptResult.rows.length === 0) {
             return res.status(400).json({ error: 'Department not found' });
         }
-        
         const deptId = deptResult.rows[0].id;
-        
         const existing = await pool.query(
             'SELECT id FROM employees WHERE name = $1 AND department_id = $2',
             [name, deptId]
@@ -673,14 +593,11 @@ app.post('/api/employees', async (req, res) => {
         if (existing.rows.length > 0) {
             return res.status(400).json({ error: 'Employee already exists in this department' });
         }
-        
         await pool.query(
             `INSERT INTO employees (name, department_id, employee_type) 
              VALUES ($1, $2, $3)`,
             [name, deptId, employee_type]
         );
-        
-        console.log('✅ Employee added:', name);
         res.json({ success: true, message: `Employee "${name}" added successfully!` });
     } catch (error) {
         console.error('Error adding employee:', error);
@@ -688,18 +605,15 @@ app.post('/api/employees', async (req, res) => {
     }
 });
 
-// Edit employee
 app.put('/api/employees/:id', async (req, res) => {
     const { id } = req.params;
     const { name, department, employee_type } = req.body;
-    
     try {
         const deptResult = await pool.query('SELECT id FROM departments WHERE name = $1', [department]);
         if (deptResult.rows.length === 0) {
             return res.status(400).json({ error: 'Department not found' });
         }
         const deptId = deptResult.rows[0].id;
-        
         const existing = await pool.query(
             'SELECT id FROM employees WHERE name = $1 AND department_id = $2 AND id != $3',
             [name, deptId, id]
@@ -707,20 +621,12 @@ app.put('/api/employees/:id', async (req, res) => {
         if (existing.rows.length > 0) {
             return res.status(400).json({ error: 'Employee already exists in this department' });
         }
-        
         await pool.query(
             `UPDATE employees 
              SET name = $1, department_id = $2, employee_type = $3 
              WHERE id = $4`,
             [name, deptId, employee_type, id]
         );
-        
-        // Also update username if user exists with this name
-        await pool.query(
-            `UPDATE users SET username = $1 WHERE username = $2`,
-            [name, name]
-        );
-        
         res.json({ success: true, message: 'Employee updated successfully!' });
     } catch (error) {
         console.error('Error updating employee:', error);
@@ -728,7 +634,6 @@ app.put('/api/employees/:id', async (req, res) => {
     }
 });
 
-// Delete employee
 app.delete('/api/employees/:id', async (req, res) => {
     const { id } = req.params;
     try {
@@ -742,10 +647,95 @@ app.delete('/api/employees/:id', async (req, res) => {
 });
 
 // =============================================
+// BREAK LIMIT FUNCTIONS
+// =============================================
+
+async function getBreakAllowance(employeeName) {
+    try {
+        const empResult = await pool.query(
+            'SELECT employee_type FROM employees WHERE name = $1',
+            [employeeName]
+        );
+        if (empResult.rows.length === 0) {
+            return '1:00';
+        }
+        const empType = empResult.rows[0].employee_type;
+        const settingKey = empType === 'local' ? 'local_break_allowance' : 'expat_break_allowance';
+        const settingResult = await pool.query(
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1',
+            [settingKey]
+        );
+        if (settingResult.rows.length > 0) {
+            return settingResult.rows[0].setting_value;
+        }
+        return empType === 'local' ? '1:00' : '2:30';
+    } catch (error) {
+        console.error('Error getting break allowance:', error);
+        return '1:00';
+    }
+}
+
+async function getBreakTimeUsedToday(employeeName) {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                COALESCE(SUM(b.break_in - b.break_out), INTERVAL '0') AS total_used
+            FROM break_log b
+            JOIN employees e ON b.employee_id = e.id
+            WHERE e.name = $1 AND b.break_date = CURRENT_DATE AND b.break_in IS NOT NULL
+        `, [employeeName]);
+        const totalUsed = result.rows[0].total_used;
+        if (!totalUsed) {
+            return '00:00:00';
+        }
+        if (typeof totalUsed === 'object' && totalUsed !== null) {
+            const hours = totalUsed.hours || 0;
+            const minutes = totalUsed.minutes || 0;
+            const seconds = totalUsed.seconds || 0;
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+        if (typeof totalUsed === 'string') {
+            return totalUsed;
+        }
+        return '00:00:00';
+    } catch (error) {
+        console.error('Error calculating break time used:', error);
+        return '00:00:00';
+    }
+}
+
+// Check if employee can take break - ALWAYS ALLOWED
+async function canTakeBreak(employeeName) {
+    const activeCheck = await pool.query(`
+        SELECT b.id FROM break_log b
+        JOIN employees e ON b.employee_id = e.id
+        WHERE e.name = $1 AND b.break_in IS NULL
+    `, [employeeName]);
+    
+    if (activeCheck.rows.length > 0) {
+        return { allowed: false, reason: 'Already on break! Please click "In" first.' };
+    }
+    
+    const allowanceStr = await getBreakAllowance(employeeName);
+    const usedStr = await getBreakTimeUsedToday(employeeName);
+    const allowanceMinutes = timeToMinutes(allowanceStr);
+    const usedMinutes = timeToMinutes(usedStr);
+    const remainingMinutes = allowanceMinutes - usedMinutes;
+    const remainingStr = minutesToTime(Math.max(0, remainingMinutes));
+    
+    return { 
+        allowed: true,
+        remaining: remainingStr,
+        used: usedStr,
+        allowance: allowanceStr,
+        is_exceeded: remainingMinutes <= 0
+    };
+}
+
+// =============================================
 // BREAK ROUTES
 // =============================================
 
-// Get active breaks
 app.get('/api/active-breaks', async (req, res) => {
     try {
         const query = `
@@ -771,11 +761,8 @@ app.get('/api/active-breaks', async (req, res) => {
     }
 });
 
-// Get breaks for specific employee
 app.get('/api/breaks/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
-    console.log('📊 Fetching breaks for:', employeeName);
-    
     try {
         const query = `
             SELECT 
@@ -805,7 +792,6 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
             LIMIT 50
         `;
         const result = await pool.query(query, [employeeName]);
-        console.log('✅ Found', result.rows.length, 'breaks for', employeeName);
         res.json(result.rows);
     } catch (error) {
         console.error('Error in /api/breaks:', error);
@@ -813,7 +799,6 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
     }
 });
 
-// Check if employee is on break
 app.get('/api/active-break/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     try {
@@ -839,11 +824,148 @@ app.get('/api/active-break/:employeeName', async (req, res) => {
 });
 
 // =============================================
-// BREAK LIMIT CHECK FUNCTIONS
+// BREAK OUT - WITH CONGRATULATIONS MESSAGE
 // =============================================
 
-// Get employee's break allowance based on type
-async function getBreakAllowance(employeeName) {
+app.post('/api/break-out', async (req, res) => {
+    const { employeeName, breakDate, breakOut } = req.body;
+    console.log('🔴 Break Out:', employeeName, breakDate, breakOut);
+    
+    try {
+        const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
+        if (employee.rows.length === 0) {
+            return res.status(404).json({ error: 'Employee not found' });
+        }
+        
+        const checkResult = await canTakeBreak(employeeName);
+        
+        if (!checkResult.allowed) {
+            return res.status(400).json({ 
+                error: checkResult.reason
+            });
+        }
+        
+        const employeeId = employee.rows[0].id;
+        
+        await pool.query(
+            `INSERT INTO break_log (employee_id, break_date, break_out) 
+             VALUES ($1, $2, $3)`,
+            [employeeId, breakDate, breakOut]
+        );
+        
+        const empTypeResult = await pool.query(
+            'SELECT employee_type FROM employees WHERE id = $1',
+            [employeeId]
+        );
+        const empType = empTypeResult.rows[0]?.employee_type || 'unknown';
+        const typeLabel = empType === 'local' ? 'Local' : 'Expat';
+        
+        // Build message
+        let message = `✅ ${employeeName} started break at ${breakOut}`;
+        let isExceeded = checkResult.is_exceeded || false;
+        
+        if (isExceeded) {
+            message = `🎉 Congratulations ${employeeName}! You have exceeded the allowed break time. (${typeLabel} Employee)`;
+        }
+        
+        console.log('✅ Break started for:', employeeName);
+        res.json({ 
+            success: true, 
+            message: message,
+            remaining: checkResult.remaining,
+            used: checkResult.used,
+            allowance: checkResult.allowance,
+            employee_type: empType,
+            is_exceeded: isExceeded
+        });
+    } catch (error) {
+        console.error('Error in /api/break-out:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// =============================================
+// BREAK IN
+// =============================================
+
+app.post('/api/break-in', async (req, res) => {
+    const { employeeName, breakDate, breakIn } = req.body;
+    console.log('🟢 Break In:', employeeName, breakDate, breakIn);
+    
+    try {
+        const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
+        if (employee.rows.length === 0) {
+            return res.status(404).json({ error: 'Employee not found' });
+        }
+        
+        const employeeId = employee.rows[0].id;
+        
+        const activeBreak = await pool.query(
+            `SELECT b.id FROM break_log b
+             WHERE b.employee_id = $1 AND b.break_in IS NULL
+             ORDER BY b.break_out DESC
+             LIMIT 1`,
+            [employeeId]
+        );
+        
+        if (activeBreak.rows.length === 0) {
+            return res.status(400).json({ 
+                error: 'No active break found! Please click Break first.' 
+            });
+        }
+        
+        const breakId = activeBreak.rows[0].id;
+        await pool.query(`UPDATE break_log SET break_in = $1 WHERE id = $2`, [breakIn, breakId]);
+        
+        console.log('✅ Break ended for:', employeeName);
+        res.json({ 
+            success: true, 
+            message: `✅ ${employeeName} ended break at ${breakIn}`
+        });
+    } catch (error) {
+        console.error('Error in /api/break-in:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/breaks/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query('DELETE FROM break_log WHERE id = $1', [id]);
+        res.json({ success: true, message: 'Break deleted successfully!' });
+    } catch (error) {
+        console.error('Error in /api/breaks/:id:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/today/:employeeName', async (req, res) => {
+    const { employeeName } = req.params;
+    try {
+        const query = `
+            SELECT 
+                COUNT(*) FILTER (WHERE b.break_in IS NOT NULL) AS breaks_today,
+                COALESCE(SUM(b.break_in - b.break_out) FILTER (WHERE b.break_in IS NOT NULL), INTERVAL '0') AS total_time_used,
+                COUNT(*) FILTER (WHERE b.break_in IS NULL) AS active_breaks
+            FROM break_log b
+            JOIN employees e ON b.employee_id = e.id
+            WHERE e.name = $1 AND b.break_date = CURRENT_DATE
+        `;
+        const result = await pool.query(query, [employeeName]);
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Error in /api/today/:employeeName:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// =============================================
+// BREAK STATUS ROUTE
+// =============================================
+
+app.get('/api/break-status/:employeeName', async (req, res) => {
+    const { employeeName } = req.params;
+    
     try {
         const empResult = await pool.query(
             'SELECT employee_type FROM employees WHERE name = $1',
@@ -851,7 +973,7 @@ async function getBreakAllowance(employeeName) {
         );
         
         if (empResult.rows.length === 0) {
-            return '1:00';
+            return res.status(404).json({ error: 'Employee not found' });
         }
         
         const empType = empResult.rows[0].employee_type;
@@ -861,95 +983,51 @@ async function getBreakAllowance(employeeName) {
             [settingKey]
         );
         
+        let allowanceStr = empType === 'local' ? '1:00' : '2:30';
         if (settingResult.rows.length > 0) {
-            return settingResult.rows[0].setting_value;
+            allowanceStr = settingResult.rows[0].setting_value;
         }
         
-        return empType === 'local' ? '1:00' : '2:30';
-    } catch (error) {
-        console.error('Error getting break allowance:', error);
-        return '1:00';
-    }
-}
-
-// Get total break time used today - FIXED
-async function getBreakTimeUsedToday(employeeName) {
-    try {
-        const result = await pool.query(`
-            SELECT 
-                COALESCE(SUM(b.break_in - b.break_out), INTERVAL '0') AS total_used
-            FROM break_log b
+        const usedStr = await getBreakTimeUsedToday(employeeName);
+        
+        const activeCheck = await pool.query(`
+            SELECT b.id FROM break_log b
             JOIN employees e ON b.employee_id = e.id
-            WHERE e.name = $1 AND b.break_date = CURRENT_DATE AND b.break_in IS NOT NULL
+            WHERE e.name = $1 AND b.break_in IS NULL
         `, [employeeName]);
         
-        const totalUsed = result.rows[0].total_used;
+        const isOnBreak = activeCheck.rows.length > 0;
         
-        if (!totalUsed) {
-            return '00:00:00';
-        }
+        const allowanceMinutes = timeToMinutes(allowanceStr);
+        const usedMinutes = timeToMinutes(usedStr);
+        const remainingMinutes = allowanceMinutes - usedMinutes;
+        const isExceeded = remainingMinutes <= 0;
+        const typeLabel = empType === 'local' ? 'Local' : 'Expat';
         
-        // If it's a PostgreSQL interval object
-        if (typeof totalUsed === 'object' && totalUsed !== null) {
-            // Format: "HH:MM:SS"
-            const hours = totalUsed.hours || 0;
-            const minutes = totalUsed.minutes || 0;
-            const seconds = totalUsed.seconds || 0;
-            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-        }
-        
-        // If it's a string like "02:30:00"
-        if (typeof totalUsed === 'string') {
-            return totalUsed;
-        }
-        
-        return '00:00:00';
-    } catch (error) {
-        console.error('Error calculating break time used:', error);
-        return '00:00:00';
-    }
-}
-
-// Check if employee can take break
-async function canTakeBreak(employeeName) {
-    // 1. Check if already on break
-    const activeCheck = await pool.query(`
-        SELECT b.id FROM break_log b
-        JOIN employees e ON b.employee_id = e.id
-        WHERE e.name = $1 AND b.break_in IS NULL
-    `, [employeeName]);
-    
-    if (activeCheck.rows.length > 0) {
-        return { allowed: false, reason: 'Already on break! Please click "In" first.' };
-    }
-    
-    // 2. Check break allowance
-    const allowanceStr = await getBreakAllowance(employeeName);
-    const usedStr = await getBreakTimeUsedToday(employeeName);
-    
-    const allowanceMinutes = timeToMinutes(allowanceStr);
-    const usedMinutes = timeToMinutes(usedStr);
-    const remainingMinutes = allowanceMinutes - usedMinutes;
-    
-    if (remainingMinutes <= 0) {
-        return { 
-            allowed: false, 
-            reason: `❌ Break limit exceeded! You have used ${usedStr} out of ${allowanceStr}. No break time left.`,
-            used: usedStr,
+        res.json({
+            employee_name: employeeName,
+            employee_type: empType,
             allowance: allowanceStr,
-            remaining: '00:00'
-        };
+            used: usedStr,
+            remaining: minutesToTime(Math.max(0, remainingMinutes)),
+            is_on_break: isOnBreak,
+            is_exceeded: isExceeded,
+            message: isExceeded ? `🎉 Congratulations ${employeeName}! You have exceeded the allowed break time. (${typeLabel} Employee)` : null
+        });
+    } catch (error) {
+        console.error('Error checking break status:', error);
+        res.status(500).json({ 
+            error: error.message,
+            employee_name: employeeName,
+            allowance: '1:00',
+            used: '00:00',
+            remaining: '00:00',
+            is_on_break: false,
+            is_exceeded: false,
+            message: null
+        });
     }
-    
-    const remainingStr = minutesToTime(remainingMinutes);
-    
-    return { 
-        allowed: true, 
-        remaining: remainingStr,
-        used: usedStr,
-        allowance: allowanceStr
-    };
-}
+});
 
 // =============================================
 // BREAK ALERT ROUTE
@@ -1048,216 +1126,11 @@ app.get('/api/break-alerts', async (req, res) => {
 });
 
 // =============================================
-// BREAK OUT WITH LIMIT CHECK
-// =============================================
-
-app.post('/api/break-out', async (req, res) => {
-    const { employeeName, breakDate, breakOut } = req.body;
-    console.log('🔴 Break Out:', employeeName, breakDate, breakOut);
-    
-    try {
-        const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
-        if (employee.rows.length === 0) {
-            return res.status(404).json({ error: 'Employee not found' });
-        }
-        
-        const checkResult = await canTakeBreak(employeeName);
-        
-        if (!checkResult.allowed) {
-            return res.status(400).json({ 
-                error: checkResult.reason,
-                used: checkResult.used,
-                allowance: checkResult.allowance,
-                remaining: checkResult.remaining || '00:00'
-            });
-        }
-        
-        const employeeId = employee.rows[0].id;
-        
-        await pool.query(
-            `INSERT INTO break_log (employee_id, break_date, break_out) 
-             VALUES ($1, $2, $3)`,
-            [employeeId, breakDate, breakOut]
-        );
-        
-        const empTypeResult = await pool.query(
-            'SELECT employee_type FROM employees WHERE id = $1',
-            [employeeId]
-        );
-        const empType = empTypeResult.rows[0]?.employee_type || 'unknown';
-        
-        console.log('✅ Break started for:', employeeName);
-        res.json({ 
-            success: true, 
-            message: `✅ ${employeeName} started break at ${breakOut}`,
-            remaining: checkResult.remaining,
-            used: checkResult.used,
-            allowance: checkResult.allowance,
-            employee_type: empType
-        });
-    } catch (error) {
-        console.error('Error in /api/break-out:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// =============================================
-// BREAK IN
-// =============================================
-
-app.post('/api/break-in', async (req, res) => {
-    const { employeeName, breakDate, breakIn } = req.body;
-    console.log('🟢 Break In:', employeeName, breakDate, breakIn);
-    
-    try {
-        const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
-        if (employee.rows.length === 0) {
-            return res.status(404).json({ error: 'Employee not found' });
-        }
-        
-        const employeeId = employee.rows[0].id;
-        
-        const activeBreak = await pool.query(
-            `SELECT b.id FROM break_log b
-             WHERE b.employee_id = $1 AND b.break_in IS NULL
-             ORDER BY b.break_out DESC
-             LIMIT 1`,
-            [employeeId]
-        );
-        
-        if (activeBreak.rows.length === 0) {
-            return res.status(400).json({ 
-                error: 'No active break found! Please click Break first.' 
-            });
-        }
-        
-        const breakId = activeBreak.rows[0].id;
-        await pool.query(`UPDATE break_log SET break_in = $1 WHERE id = $2`, [breakIn, breakId]);
-        
-        console.log('✅ Break ended for:', employeeName);
-        res.json({ 
-            success: true, 
-            message: `✅ ${employeeName} ended break at ${breakIn}`
-        });
-    } catch (error) {
-        console.error('Error in /api/break-in:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Delete break
-app.delete('/api/breaks/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        await pool.query('DELETE FROM break_log WHERE id = $1', [id]);
-        res.json({ success: true, message: 'Break deleted successfully!' });
-    } catch (error) {
-        console.error('Error in /api/breaks/:id:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Get today's summary
-app.get('/api/today/:employeeName', async (req, res) => {
-    const { employeeName } = req.params;
-    try {
-        const query = `
-            SELECT 
-                COUNT(*) FILTER (WHERE b.break_in IS NOT NULL) AS breaks_today,
-                COALESCE(SUM(b.break_in - b.break_out) FILTER (WHERE b.break_in IS NOT NULL), INTERVAL '0') AS total_time_used,
-                COUNT(*) FILTER (WHERE b.break_in IS NULL) AS active_breaks
-            FROM break_log b
-            JOIN employees e ON b.employee_id = e.id
-            WHERE e.name = $1 AND b.break_date = CURRENT_DATE
-        `;
-        const result = await pool.query(query, [employeeName]);
-        res.json(result.rows[0]);
-    } catch (error) {
-        console.error('Error in /api/today/:employeeName:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// =============================================
-// BREAK STATUS ROUTE - FIXED
-// =============================================
-
-app.get('/api/break-status/:employeeName', async (req, res) => {
-    const { employeeName } = req.params;
-    
-    try {
-        // 1. Get employee type
-        const empResult = await pool.query(
-            'SELECT employee_type FROM employees WHERE name = $1',
-            [employeeName]
-        );
-        
-        if (empResult.rows.length === 0) {
-            return res.status(404).json({ error: 'Employee not found' });
-        }
-        
-        const empType = empResult.rows[0].employee_type;
-        
-        // 2. Get break allowance from settings
-        const settingKey = empType === 'local' ? 'local_break_allowance' : 'expat_break_allowance';
-        const settingResult = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1',
-            [settingKey]
-        );
-        
-        let allowanceStr = empType === 'local' ? '1:00' : '2:30';
-        if (settingResult.rows.length > 0) {
-            allowanceStr = settingResult.rows[0].setting_value;
-        }
-        
-        // 3. Get total break time used today
-        const usedStr = await getBreakTimeUsedToday(employeeName);
-        
-        // 4. Check if currently on break
-        const activeCheck = await pool.query(`
-            SELECT b.id FROM break_log b
-            JOIN employees e ON b.employee_id = e.id
-            WHERE e.name = $1 AND b.break_in IS NULL
-        `, [employeeName]);
-        
-        const isOnBreak = activeCheck.rows.length > 0;
-        
-        // 5. Calculate remaining time
-        const allowanceMinutes = timeToMinutes(allowanceStr);
-        const usedMinutes = timeToMinutes(usedStr);
-        const remainingMinutes = allowanceMinutes - usedMinutes;
-        
-        // 6. Send response
-        res.json({
-            employee_name: employeeName,
-            employee_type: empType,
-            allowance: allowanceStr,
-            used: usedStr,
-            remaining: minutesToTime(Math.max(0, remainingMinutes)),
-            is_on_break: isOnBreak,
-            is_exceeded: remainingMinutes <= 0
-        });
-    } catch (error) {
-        console.error('Error checking break status:', error);
-        res.status(500).json({ 
-            error: error.message,
-            employee_name: employeeName,
-            allowance: '1:00',
-            used: '00:00',
-            remaining: '00:00',
-            is_on_break: false,
-            is_exceeded: false
-        });
-    }
-});
-
-// =============================================
 // REPORT ROUTE
 // =============================================
 
 app.get('/api/break-report', async (req, res) => {
     const { employeeName } = req.query;
-    
     try {
         let query = `
             SELECT 
@@ -1284,18 +1157,14 @@ app.get('/api/break-report', async (req, res) => {
             JOIN departments d ON e.department_id = d.id
             WHERE 1=1
         `;
-        
         const params = [];
         let paramCount = 1;
-        
         if (employeeName) {
             query += ` AND e.name = $${paramCount}`;
             params.push(employeeName);
             paramCount++;
         }
-        
         query += ` ORDER BY b.break_date DESC, b.break_out DESC LIMIT 500`;
-        
         const result = await pool.query(query, params);
         res.json(result.rows);
     } catch (error) {
@@ -1315,5 +1184,5 @@ app.listen(PORT, () => {
     console.log(`📊 Departments: Betrealated, Banking, CS, Checking`);
     console.log(`👥 Employee Types: Local & Expat`);
     console.log(`⏱️ Break Limits: Local 1:00, Expat 2:30`);
-    console.log(`🚨 Break Alert System: Active`);
+    console.log(`🎉 Break Alert: Congratulations message on exceed`);
 });
