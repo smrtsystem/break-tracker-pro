@@ -217,12 +217,12 @@ async function runAutoMigration() {
         `);
         console.log('✅ System settings table ready');
 
-        // 10. Insert default settings if not exist
+        // 10. Insert default settings - UPDATED: Local 1:00, Expat 2:30
         const settingsCheck = await client.query('SELECT COUNT(*) FROM system_settings');
         if (parseInt(settingsCheck.rows[0].count) === 0) {
             const defaults = [
-                { key: 'local_break_allowance', value: '2:30' },
-                { key: 'expat_break_allowance', value: '2:00' },
+                { key: 'local_break_allowance', value: '1:00' },
+                { key: 'expat_break_allowance', value: '2:30' },
                 { key: 'history_limit', value: '50' },
                 { key: 'refresh_interval', value: '15' }
             ];
@@ -233,7 +233,7 @@ async function runAutoMigration() {
                     [setting.key, setting.value]
                 );
             }
-            console.log('✅ Default settings inserted');
+            console.log('✅ Default settings inserted (Local: 1:00, Expat: 2:30)');
         }
 
         console.log('✅ Database migration completed successfully!');
@@ -824,7 +824,7 @@ function minutesToTime(minutes) {
     return `${sign}${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 }
 
-// Get employee's break allowance based on type
+// Get employee's break allowance based on type - UPDATED
 async function getBreakAllowance(employeeName) {
     try {
         const empResult = await pool.query(
@@ -833,7 +833,7 @@ async function getBreakAllowance(employeeName) {
         );
         
         if (empResult.rows.length === 0) {
-            return '2:30';
+            return '1:00';
         }
         
         const empType = empResult.rows[0].employee_type;
@@ -847,10 +847,11 @@ async function getBreakAllowance(employeeName) {
             return settingResult.rows[0].setting_value;
         }
         
-        return empType === 'local' ? '2:30' : '2:00';
+        // UPDATED DEFAULTS: Local 1:00, Expat 2:30
+        return empType === 'local' ? '1:00' : '2:30';
     } catch (error) {
         console.error('Error getting break allowance:', error);
-        return '2:30';
+        return '1:00';
     }
 }
 
@@ -940,7 +941,7 @@ app.get('/api/break-alerts', async (req, res) => {
                 [settingKey]
             );
             
-            let allowance = emp.employee_type === 'local' ? '2:30' : '2:00';
+            let allowance = emp.employee_type === 'local' ? '1:00' : '2:30';
             if (settingResult.rows.length > 0) {
                 allowance = settingResult.rows[0].setting_value;
             }
@@ -1242,5 +1243,6 @@ app.listen(PORT, () => {
     console.log(`📦 Database: PostgreSQL`);
     console.log(`📊 Departments: Betrealated, Banking, CS, Checking`);
     console.log(`👥 Employee Types: Local & Expat`);
+    console.log(`⏱️ Break Limits: Local 1:00, Expat 2:30`);
     console.log(`🚨 Break Alert System: Active`);
 });
