@@ -985,6 +985,10 @@ async function onEmployeeChange() {
     await updateBreakStatus(employeeName);
 }
 
+// =============================================
+// UPDATE BREAK STATUS - FIXED (Only show congratulations when exceeded)
+// =============================================
+
 async function updateBreakStatus(employeeName) {
     try {
         const response = await fetch(`${API_URL}/api/break-status/${encodeURIComponent(employeeName)}`);
@@ -1004,6 +1008,7 @@ async function updateBreakStatus(employeeName) {
             return;
         }
         
+        // Update status display
         if (data.is_on_break) {
             statusDisplay.innerHTML = '🔴 Status: <strong style="color:#dc3545;">ON BREAK</strong>';
             statusDisplay.style.background = '#ffebee';
@@ -1013,27 +1018,32 @@ async function updateBreakStatus(employeeName) {
             breakInBtn.disabled = false;
             breakInBtn.style.opacity = '1';
         } else if (data.is_exceeded) {
-            // Show Congratulations message on status
-            statusDisplay.innerHTML = `🎉 Status: <strong style="color:#ff6b00;">LIMIT EXCEEDED</strong>`;
+            // ONLY SHOW CONGRATULATIONS WHEN EXCEEDED            const typeLabel = data.employee_type === 'local' ? 'Local' : 'Expat';
+            statusDisplay.innerHTML = `🎉 <strong style="color:#ff6b00;">Congratulations ${employeeName}!</strong><br><span style="font-size:12px; color:#856404;">You have exceeded the allowed break time. (${typeLabel} Employee)</span>`;
             statusDisplay.style.background = '#fff3cd';
             statusDisplay.style.border = '2px solid #ffc107';
+            statusDisplay.style.padding = '12px 16px';
+            statusDisplay.style.borderRadius = '12px';
             breakOutBtn.disabled = false;  // Allow break even if exceeded
             breakOutBtn.style.opacity = '1';
             breakInBtn.disabled = true;
             breakInBtn.style.opacity = '0.5';
-            // Show congratulations message as alert
-            showAlert(data.message || `🎉 Congratulations ${employeeName}! You have exceeded the allowed break time.`, 'warning');
+            // Show congratulations alert
+            showAlert(`🎉 Congratulations ${employeeName}! You have exceeded the allowed break time. (${typeLabel} Employee)`, 'warning');
         } else {
+            // Normal status - show remaining time
             statusDisplay.innerHTML = `🟢 Status: <strong style="color:#28a745;">Available</strong> (${data.remaining || '00:00'} left)`;
             statusDisplay.style.background = '#e8f5e9';
             statusDisplay.style.border = 'none';
+            statusDisplay.style.padding = '10px 16px';
+            statusDisplay.style.borderRadius = '10px';
             breakOutBtn.disabled = false;
             breakOutBtn.style.opacity = '1';
             breakInBtn.disabled = true;
             breakInBtn.style.opacity = '0.5';
         }
         
-        // Update stats with break info
+        // Update stats with break info - ALWAYS SHOW BREAK LIMIT
         const statsDiv = document.getElementById('stats');
         if (statsDiv) {
             let limitCard = statsDiv.querySelector('.stat-card.limit-card');
@@ -1043,9 +1053,11 @@ async function updateBreakStatus(employeeName) {
                 limitCard.style.borderLeftColor = '#ffc107';
                 statsDiv.appendChild(limitCard);
             }
+            
+            // Show break limit info (always show this)
             limitCard.innerHTML = `
                 <div class="label">⏱️ Break Limit</div>
-                <div class="value ${data.is_exceeded ? 'warning' : 'success'}">${data.remaining || '00:00'} / ${data.allowance || '1:00'}</div>
+                <div class="value ${data.is_exceeded ? 'danger' : 'success'}">${data.remaining || '00:00'} / ${data.allowance || '1:00'}</div>
                 <div style="font-size:10px; color:#888; margin-top:2px;">Used: ${data.used || '00:00'}</div>
                 ${data.is_exceeded ? `<div style="font-size:10px; color:#ff6b00; font-weight:600; margin-top:2px;">🎉 Exceeded!</div>` : ''}
             `;
