@@ -874,8 +874,8 @@ function displayBreakAlerts(data) {
         typeText = `(Expat: ${expatExceeded.length})`;
     }
     
-    title.textContent = `🚨 Break Time Alert! ${count} ${exceedText} exceeded their limit ${typeText}`;
-    message.textContent = `⚠️ These employees have exceeded their allowed break time for today. Please take action.`;
+    title.textContent = `🎉 Congratulations! ${count} ${exceedText} exceeded their break limit ${typeText}`;
+    message.textContent = `⚠️ These employees have exceeded their allowed break time. They can still take breaks, but please monitor their usage.`;
     
     employeesList.innerHTML = '';
     data.alerts.forEach(alert => {
@@ -918,7 +918,9 @@ function displayBreakAlerts(data) {
             <span style="font-size:11px; color:#dc3545; font-weight:700;">
                 🔥 +${exceededMinutes}min
             </span>
-            ${alert.is_on_break ? '<span style="font-size:10px; color:#dc3545;">🔴 On Break</span>' : ''}
+            <span style="font-size:11px; color:#ff6b00; font-weight:700;">
+                🎉 Exceeded!
+            </span>
             <button onclick="event.stopPropagation(); selectEmployeeFromAlert('${alert.employee_name}')" 
                     style="background:#1a73e8; color:white; border:none; border-radius:12px; padding:2px 12px; font-size:11px; cursor:pointer;">
                 View
@@ -1011,13 +1013,16 @@ async function updateBreakStatus(employeeName) {
             breakInBtn.disabled = false;
             breakInBtn.style.opacity = '1';
         } else if (data.is_exceeded) {
-            statusDisplay.innerHTML = '⛔ Status: <strong style="color:#dc3545;">LIMIT EXCEEDED</strong>';
-            statusDisplay.style.background = '#f8d7da';
-            statusDisplay.style.border = '2px solid #dc3545';
-            breakOutBtn.disabled = true;
-            breakOutBtn.style.opacity = '0.5';
+            // Show Congratulations message on status
+            statusDisplay.innerHTML = `🎉 Status: <strong style="color:#ff6b00;">LIMIT EXCEEDED</strong>`;
+            statusDisplay.style.background = '#fff3cd';
+            statusDisplay.style.border = '2px solid #ffc107';
+            breakOutBtn.disabled = false;  // Allow break even if exceeded
+            breakOutBtn.style.opacity = '1';
             breakInBtn.disabled = true;
             breakInBtn.style.opacity = '0.5';
+            // Show congratulations message as alert
+            showAlert(data.message || `🎉 Congratulations ${employeeName}! You have exceeded the allowed break time.`, 'warning');
         } else {
             statusDisplay.innerHTML = `🟢 Status: <strong style="color:#28a745;">Available</strong> (${data.remaining || '00:00'} left)`;
             statusDisplay.style.background = '#e8f5e9';
@@ -1040,8 +1045,9 @@ async function updateBreakStatus(employeeName) {
             }
             limitCard.innerHTML = `
                 <div class="label">⏱️ Break Limit</div>
-                <div class="value ${data.is_exceeded ? 'danger' : 'success'}">${data.remaining || '00:00'} / ${data.allowance || '1:00'}</div>
+                <div class="value ${data.is_exceeded ? 'warning' : 'success'}">${data.remaining || '00:00'} / ${data.allowance || '1:00'}</div>
                 <div style="font-size:10px; color:#888; margin-top:2px;">Used: ${data.used || '00:00'}</div>
+                ${data.is_exceeded ? `<div style="font-size:10px; color:#ff6b00; font-weight:600; margin-top:2px;">🎉 Exceeded!</div>` : ''}
             `;
         }
         
@@ -1189,7 +1195,8 @@ async function breakOut() {
         const result = await response.json();
 
         if (response.ok) {
-            showAlert(`✅ ${employeeName} started break at ${breakOut}`, 'success');
+            // Show the message from server (which includes congratulations if exceeded)
+            showAlert(result.message, result.is_exceeded ? 'warning' : 'success');
             await refreshData();
             await loadActiveBreaks();
             await fetchBreakAlerts();
@@ -1222,7 +1229,7 @@ async function breakIn() {
         const result = await response.json();
 
         if (response.ok) {
-            showAlert(`✅ ${employeeName} ended break at ${breakIn}`, 'success');
+            showAlert(result.message, 'success');
             await refreshData();
             await loadActiveBreaks();
             await fetchBreakAlerts();
@@ -1582,8 +1589,30 @@ async function refreshData() {
 function showAlert(message, type) {
     const alertDiv = document.getElementById('alert');
     alertDiv.textContent = message;
-    alertDiv.className = `alert alert-${type}`;
+    
+    // Remove existing classes
+    alertDiv.className = 'alert';
+    
+    // Add appropriate class
+    if (type === 'success') {
+        alertDiv.classList.add('alert-success');
+        alertDiv.style.display = 'block';
+    } else if (type === 'error') {
+        alertDiv.classList.add('alert-error');
+        alertDiv.style.display = 'block';
+    } else if (type === 'warning') {
+        alertDiv.style.background = '#fff3cd';
+        alertDiv.style.color = '#856404';
+        alertDiv.style.border = '1px solid #ffc107';
+        alertDiv.style.display = 'block';
+        alertDiv.className = 'alert';
+        alertDiv.classList.add('alert-warning');
+    } else {
+        alertDiv.style.display = 'block';
+    }
+    
     setTimeout(() => {
         alertDiv.className = 'alert';
-    }, 5000);
+        alertDiv.style.display = 'none';
+    }, 6000);
 }
