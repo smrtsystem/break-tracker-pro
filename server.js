@@ -731,10 +731,10 @@ async function canTakeBreak(employeeName) {
 }
 
 // =============================================
-// BREAK ROUTES - COMPLETE FIXED
+// BREAK ROUTES - COMPLETE FIXED WITH DEBUG
 // =============================================
 
-// GET ACTIVE BREAKS - FIXED
+// GET ACTIVE BREAKS
 app.get('/api/active-breaks', async (req, res) => {
     try {
         const query = `
@@ -762,7 +762,7 @@ app.get('/api/active-breaks', async (req, res) => {
     }
 });
 
-// GET BREAKS FOR SPECIFIC EMPLOYEE - FIXED
+// GET BREAKS FOR SPECIFIC EMPLOYEE
 app.get('/api/breaks/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     console.log('📊 Fetching breaks for:', employeeName);
@@ -797,6 +797,7 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
         `;
         const result = await pool.query(query, [employeeName]);
         console.log('✅ Found', result.rows.length, 'breaks for', employeeName);
+        console.log('🔍 First row:', result.rows[0] || 'No data');
         res.json(result.rows);
     } catch (error) {
         console.error('❌ Error in /api/breaks:', error);
@@ -833,28 +834,40 @@ app.get('/api/active-break/:employeeName', async (req, res) => {
 app.post('/api/break-out', async (req, res) => {
     const { employeeName, breakDate, breakOut } = req.body;
     console.log('🔴 Break Out:', employeeName, breakDate, breakOut);
+    console.log('🕐 Server Time:', new Date().toString());
     
     try {
+        // First check if employee exists
         const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
         if (employee.rows.length === 0) {
+            console.log('❌ Employee not found:', employeeName);
             return res.status(404).json({ error: 'Employee not found' });
         }
         
-        const checkResult = await canTakeBreak(employeeName);
+        const employeeId = employee.rows[0].id;
+        console.log('✅ Employee ID:', employeeId);
         
-        if (!checkResult.allowed) {
+        // Check if already on break
+        const activeCheck = await pool.query(
+            `SELECT id FROM break_log 
+             WHERE employee_id = $1 AND break_in IS NULL`,
+            [employeeId]
+        );
+        
+        if (activeCheck.rows.length > 0) {
             return res.status(400).json({ 
-                error: checkResult.reason
+                error: 'Already on break! Please click "In" first.' 
             });
         }
         
-        const employeeId = employee.rows[0].id;
-        
-        await pool.query(
+        // Insert break
+        const insertResult = await pool.query(
             `INSERT INTO break_log (employee_id, break_date, break_out) 
-             VALUES ($1, $2, $3)`,
+             VALUES ($1, $2, $3) RETURNING id`,
             [employeeId, breakDate, breakOut]
         );
+        
+        console.log('✅ Break inserted with ID:', insertResult.rows[0].id);
         
         const empTypeResult = await pool.query(
             'SELECT employee_type FROM employees WHERE id = $1',
@@ -864,24 +877,16 @@ app.post('/api/break-out', async (req, res) => {
         const typeLabel = empType === 'local' ? 'Local' : 'Expat';
         
         let message = `✅ ${employeeName} started break at ${breakOut}`;
-        let isExceeded = checkResult.is_exceeded || false;
-        
-        if (isExceeded) {
-            message = `🎉 Congratulations ${employeeName}! You have exceeded the allowed break time. (${typeLabel} Employee)`;
-        }
         
         console.log('✅ Break started for:', employeeName);
         res.json({ 
             success: true, 
             message: message,
-            remaining: checkResult.remaining,
-            used: checkResult.used,
-            allowance: checkResult.allowance,
             employee_type: empType,
-            is_exceeded: isExceeded
+            is_exceeded: false
         });
     } catch (error) {
-        console.error('Error in /api/break-out:', error);
+        console.error('❌ Error in /api/break-out:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -1120,7 +1125,7 @@ app.get('/api/break-alerts', async (req, res) => {
 });
 
 // =============================================
-// BREAK REPORT ROUTE - FIXED WITH TOTAL TIME
+// BREAK REPORT ROUTE - FIXED
 // =============================================
 
 app.get('/api/break-report', async (req, res) => {
@@ -1145,12 +1150,7 @@ app.get('/api/break-report', async (req, res) => {
                 CASE 
                     WHEN b.break_in IS NULL THEN 'On Break'
                     ELSE 'Completed'
-                END AS status,
-                -- Calculate duration in minutes for total
-                CASE 
-                    WHEN b.break_in IS NOT NULL THEN EXTRACT(EPOCH FROM (b.break_in - b.break_out)) / 60
-                    ELSE 0
-                END AS duration_minutes
+                END AS status
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
             LEFT JOIN departments d ON e.department_id = d.id
@@ -1187,27 +1187,41 @@ app.get('/api/break-report', async (req, res) => {
         
         const result = await pool.query(query, params);
         console.log('✅ Report data found:', result.rows.length);
-        
-        // Calculate total duration for the report
-        let totalMinutes = 0;
-        result.rows.forEach(row => {
-            if (row.duration_minutes > 0) {
-                totalMinutes += parseFloat(row.duration_minutes);
-            }
-        });
-        
-        const totalHours = Math.floor(totalMinutes / 60);
-        const totalMins = Math.round(totalMinutes % 60);
-        const totalTime = `${String(totalHours).padStart(2, '0')}:${String(totalMins).padStart(2, '0')}`;
-        
-        res.json({
-            data: result.rows,
-            total_time: totalTime,
-            total_minutes: totalMinutes
-        });
+        res.json(result.rows);
     } catch (error) {
         console.error('❌ Error in /api/break-report:', error);
-        res.json({ data: [], total_time: '00:00', total_minutes: 0 });
+        res.json([]);
+    }
+});
+
+// =============================================
+// DEBUG ROUTE - Check what's in the database
+// =============================================
+
+app.get('/api/debug/breaks', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                b.id,
+                e.name AS employee_name,
+                b.break_date,
+                b.break_out,
+                b.break_in,
+                b.created_at
+            FROM break_log b
+            JOIN employees e ON b.employee_id = e.id
+            ORDER BY b.created_at DESC
+            LIMIT 20
+        `);
+        res.json({
+            success: true,
+            count: result.rows.length,
+            breaks: result.rows,
+            server_time: new Date().toString(),
+            timezone: 'Africa/Lusaka'
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -1224,4 +1238,5 @@ app.listen(PORT, () => {
     console.log(`📊 Departments: Betrealated, Banking, CS, Checking`);
     console.log(`👥 Employee Types: Local & Expat`);
     console.log(`⏱️ Break Limits: Local 1:00, Expat 2:30`);
+    console.log(`🔍 Debug: /api/debug/breaks`);
 });
