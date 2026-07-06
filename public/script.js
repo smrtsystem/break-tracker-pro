@@ -18,6 +18,7 @@ let breakAlerts = [];
 let alertInterval = null;
 let congratsInterval = null;
 
+// Check if user is logged in
 function checkAuth() {
     const userData = sessionStorage.getItem('user');
     if (!userData) {
@@ -33,6 +34,7 @@ function checkAuth() {
     }
 }
 
+// Update UI based on user role
 function updateUIForRole() {
     const isAdmin = currentUser && currentUser.role === 'admin';
     const isSubAdmin = currentUser && currentUser.role === 'sub-admin';
@@ -63,13 +65,14 @@ function updateUIForRole() {
     }
 }
 
+// Logout
 function logout() {
     sessionStorage.removeItem('user');
     window.location.href = 'login.html';
 }
 
 // =============================================
-// LIVE CLOCK - ZAMBIAN TIME
+// LIVE CLOCK - ZAMBIAN TIME (CAT - UTC+2)
 // =============================================
 
 function updateClock() {
@@ -1145,7 +1148,7 @@ async function updateBreakStatus(employeeName) {
     }
 }
 
-// LOAD EMPLOYEE BREAKS - FIXED
+// LOAD EMPLOYEE BREAKS - FIXED (handles array response)
 async function loadEmployeeBreaks(employeeName) {
     const tbody = document.getElementById('breakBody');
     const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'sub-admin');
@@ -1157,7 +1160,24 @@ async function loadEmployeeBreaks(employeeName) {
 
     try {
         const response = await fetch(`${API_URL}/api/breaks/${encodeURIComponent(employeeName)}`);
-        const data = await response.json();
+        let data = await response.json();
+        
+        // Ensure data is an array
+        if (!Array.isArray(data)) {
+            console.warn('Data is not an array, converting:', data);
+            if (data && typeof data === 'object') {
+                // If it's an object with a data property
+                if (Array.isArray(data.data)) {
+                    data = data.data;
+                } else if (Array.isArray(data.rows)) {
+                    data = data.rows;
+                } else {
+                    data = [];
+                }
+            } else {
+                data = [];
+            }
+        }
 
         console.log('📊 Break data received:', data);
 
