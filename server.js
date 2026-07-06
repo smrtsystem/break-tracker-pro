@@ -89,8 +89,8 @@ async function runAutoMigration() {
     const client = await pool.connect();
     try {
         console.log('🔧 Checking database schema...');
-        console.log('🕐 Timezone:', new Date().toString());
         
+        // Create departments table
         await client.query(`
             CREATE TABLE IF NOT EXISTS departments (
                 id SERIAL PRIMARY KEY,
@@ -100,6 +100,7 @@ async function runAutoMigration() {
         `);
         console.log('✅ Departments table ready');
 
+        // Insert default departments
         await client.query(`
             INSERT INTO departments (name) VALUES 
                 ('Betrealated'),
@@ -110,6 +111,7 @@ async function runAutoMigration() {
         `);
         console.log('✅ Default departments inserted');
 
+        // Check and add department_id column
         const deptColCheck = await client.query(`
             SELECT column_name FROM information_schema.columns 
             WHERE table_name = 'employees' AND column_name = 'department_id'
@@ -133,6 +135,7 @@ async function runAutoMigration() {
             console.log('✅ department_id column added');
         }
 
+        // Check and add employee_type column
         const typeColCheck = await client.query(`
             SELECT column_name FROM information_schema.columns 
             WHERE table_name = 'employees' AND column_name = 'employee_type'
@@ -150,6 +153,7 @@ async function runAutoMigration() {
             console.log('✅ employee_type column added');
         }
 
+        // Check and add can_manage_users column
         const manageColCheck = await client.query(`
             SELECT column_name FROM information_schema.columns 
             WHERE table_name = 'users' AND column_name = 'can_manage_users'
@@ -164,6 +168,7 @@ async function runAutoMigration() {
             console.log('✅ can_manage_users column added');
         }
 
+        // Ensure admin user exists
         await client.query(`
             INSERT INTO users (username, password, role, can_manage_users) 
             VALUES ('admin', '535680', 'admin', TRUE)
@@ -172,6 +177,7 @@ async function runAutoMigration() {
         `);
         console.log('✅ Admin user verified');
 
+        // Insert sample employees
         const empCount = await client.query('SELECT COUNT(*) FROM employees');
         if (parseInt(empCount.rows[0].count) === 0) {
             console.log('🔧 Inserting sample employees...');
@@ -226,12 +232,14 @@ async function runAutoMigration() {
             console.log('✅ Sample employees inserted');
         }
 
+        // Create indexes
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department_id);
             CREATE INDEX IF NOT EXISTS idx_employees_name ON employees(name);
             CREATE INDEX IF NOT EXISTS idx_employees_type ON employees(employee_type);
         `);
 
+        // Create system_settings table
         await client.query(`
             CREATE TABLE IF NOT EXISTS system_settings (
                 id SERIAL PRIMARY KEY,
@@ -242,6 +250,7 @@ async function runAutoMigration() {
         `);
         console.log('✅ System settings table ready');
 
+        // Insert default settings
         const settingsCheck = await client.query('SELECT COUNT(*) FROM system_settings');
         if (parseInt(settingsCheck.rows[0].count) === 0) {
             const defaults = [
@@ -261,7 +270,6 @@ async function runAutoMigration() {
         }
 
         console.log('✅ Database migration completed successfully!');
-        console.log('🕐 Current Server Time:', new Date().toString());
     } catch (error) {
         console.error('❌ Migration error:', error.message);
     } finally {
@@ -300,7 +308,6 @@ app.get('/api/test', (req, res) => {
     res.json({ 
         success: true, 
         message: 'Server is running!',
-        timestamp: new Date().toISOString(),
         local_time: new Date().toString(),
         timezone: 'Africa/Lusaka (CAT - UTC+2)'
     });
@@ -313,7 +320,6 @@ app.get('/api/db-test', async (req, res) => {
             success: true,
             message: 'Database connected!',
             time: result.rows[0].current_time,
-            server_time: new Date().toString(),
             timezone: 'Africa/Lusaka (CAT - UTC+2)'
         });
     } catch (error) {
@@ -521,12 +527,10 @@ app.put('/api/users/:username', async (req, res) => {
         if (username === 'admin') {
             return res.status(400).json({ error: 'Cannot change main admin' });
         }
-        
         const currentUser = req.body.currentUser;
         if (currentUser && currentUser.role !== 'admin') {
             return res.status(403).json({ error: 'Only Admin can change user roles' });
         }
-        
         await pool.query(
             'UPDATE users SET role = $1, can_manage_users = $2 WHERE username = $3',
             [role, can_manage_users || false, username]
@@ -734,10 +738,10 @@ async function canTakeBreak(employeeName) {
 }
 
 // =============================================
-// BREAK ROUTES - FIXED
+// BREAK ROUTES - COMPLETELY FIXED
 // =============================================
 
-// Get active breaks
+// GET ACTIVE BREAKS - FIXED
 app.get('/api/active-breaks', async (req, res) => {
     try {
         const query = `
@@ -757,7 +761,7 @@ app.get('/api/active-breaks', async (req, res) => {
             ORDER BY b.break_out ASC
         `;
         const result = await pool.query(query);
-        console.log('✅ Active breaks:', result.rows.length);
+        console.log('✅ Active breaks found:', result.rows.length);
         res.json(result.rows);
     } catch (error) {
         console.error('Error in /api/active-breaks:', error);
@@ -765,7 +769,7 @@ app.get('/api/active-breaks', async (req, res) => {
     }
 });
 
-// Get breaks for specific employee - FIXED (always returns array)
+// GET BREAKS FOR SPECIFIC EMPLOYEE - FIXED
 app.get('/api/breaks/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     console.log('📊 Fetching breaks for:', employeeName);
@@ -800,16 +804,14 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
         `;
         const result = await pool.query(query, [employeeName]);
         console.log('✅ Found', result.rows.length, 'breaks for', employeeName);
-        // Always return an array
-        res.json(result.rows || []);
+        res.json(result.rows);
     } catch (error) {
         console.error('Error in /api/breaks:', error);
-        // Always return an empty array on error
-        res.status(500).json([]);
+        res.status(500).json({ error: error.message });
     }
 });
 
-// Check if employee is on break
+// CHECK IF EMPLOYEE IS ON BREAK
 app.get('/api/active-break/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     try {
@@ -1121,7 +1123,7 @@ app.get('/api/break-alerts', async (req, res) => {
 });
 
 // =============================================
-// REPORT ROUTE
+// REPORT ROUTE - FIXED
 // =============================================
 
 app.get('/api/break-report', async (req, res) => {
@@ -1182,6 +1184,7 @@ app.get('/api/break-report', async (req, res) => {
         query += ` ORDER BY b.break_date DESC, b.break_out DESC LIMIT 500`;
         
         const result = await pool.query(query, params);
+        console.log('✅ Report data found:', result.rows.length);
         res.json(result.rows);
     } catch (error) {
         console.error('Error in /api/break-report:', error);
