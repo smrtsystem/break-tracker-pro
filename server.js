@@ -87,6 +87,21 @@ function minutesToTime(minutes) {
     return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 }
 
+// Helper: Get Zambian date string
+function getZambianDate() {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lusaka' });
+}
+
+// Helper: Get Zambian time string
+function getZambianTime() {
+    return new Date().toLocaleTimeString('en-US', { 
+        timeZone: 'Africa/Lusaka',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
+}
+
 // =============================================
 // AUTO-MIGRATION
 // =============================================
@@ -534,6 +549,7 @@ app.put('/api/users/:username/password', async (req, res) => {
     }
 });
 
+// UPDATE USER - ONLY ADMIN CAN CHANGE ROLE
 app.put('/api/users/:username', async (req, res) => {
     const { username } = req.params;
     const { role, can_manage_users } = req.body;
@@ -541,6 +557,13 @@ app.put('/api/users/:username', async (req, res) => {
         if (username === 'admin') {
             return res.status(400).json({ error: 'Cannot change main admin' });
         }
+        
+        // Only Admin can change role
+        const currentUser = req.body.currentUser;
+        if (currentUser && currentUser.role !== 'admin') {
+            return res.status(403).json({ error: 'Only Admin can change user roles' });
+        }
+        
         await pool.query(
             'UPDATE users SET role = $1, can_manage_users = $2 WHERE username = $3',
             [role, can_manage_users || false, username]
@@ -779,21 +802,21 @@ app.get('/api/active-breaks', async (req, res) => {
     }
 });
 
-// Get breaks for specific employee
+// Get breaks for specific employee - WITH ZAMBIAN TIME
 app.get('/api/breaks/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     try {
         const query = `
             SELECT 
                 b.id AS break_id,
-                TO_CHAR(b.break_date, 'DD Mon YYYY') AS date,
-                TO_CHAR(b.break_out, 'HH24:MI') AS "Break",
+                TO_CHAR(b.break_date AT TIME ZONE 'Africa/Lusaka', 'DD Mon YYYY') AS date,
+                TO_CHAR(b.break_out AT TIME ZONE 'Africa/Lusaka', 'HH24:MI') AS "Break",
                 CASE 
-                    WHEN b.break_in IS NOT NULL THEN TO_CHAR(b.break_in, 'HH24:MI')
+                    WHEN b.break_in IS NOT NULL THEN TO_CHAR(b.break_in AT TIME ZONE 'Africa/Lusaka', 'HH24:MI')
                     ELSE 'Active'
                 END AS "IN",
                 CASE 
-                    WHEN b.break_in IS NOT NULL THEN TO_CHAR(b.break_in - b.break_out, 'HH24:MI')
+                    WHEN b.break_in IS NOT NULL THEN TO_CHAR((b.break_in - b.break_out) AT TIME ZONE 'Africa/Lusaka', 'HH24:MI')
                     ELSE '--:--'
                 END AS "Duration",
                 CASE 
@@ -844,7 +867,7 @@ app.get('/api/active-break/:employeeName', async (req, res) => {
 });
 
 // =============================================
-// BREAK OUT - WITH CONGRATULATIONS MESSAGE
+// BREAK OUT
 // =============================================
 
 app.post('/api/break-out', async (req, res) => {
@@ -881,7 +904,6 @@ app.post('/api/break-out', async (req, res) => {
         const empType = empTypeResult.rows[0]?.employee_type || 'unknown';
         const typeLabel = empType === 'local' ? 'Local' : 'Expat';
         
-        // Build message - ONLY show congratulations if exceeded
         let message = `✅ ${employeeName} started break at ${breakOut}`;
         let isExceeded = checkResult.is_exceeded || false;
         
@@ -1071,8 +1093,7 @@ app.get('/api/break-alerts', async (req, res) => {
         `);
 
         const alerts = [];
-        const currentDate = new Date().toLocaleString('en-US', { timeZone: 'Africa/Lusaka' }).split(',')[0];
-        const formattedDate = currentDate.split('/').map(p => p.padStart(2, '0')).join('/');
+        const currentDate = getZambianDate();
 
         for (const emp of employees.rows) {
             const settingKey = emp.employee_type === 'local' ? 'local_break_allowance' : 'expat_break_allowance';
@@ -1156,11 +1177,11 @@ app.get('/api/break-alerts', async (req, res) => {
 });
 
 // =============================================
-// REPORT ROUTE
+// REPORT ROUTE - WITH ZAMBIAN TIME AND TOTAL
 // =============================================
 
 app.get('/api/break-report', async (req, res) => {
-    const { employeeName } = req.query;
+    const { employeeName, dateFrom, dateTo, employeeType } = req.query;
     try {
         let query = `
             SELECT 
@@ -1168,14 +1189,14 @@ app.get('/api/break-report', async (req, res) => {
                 e.name AS employee_name,
                 e.employee_type,
                 d.name AS department,
-                TO_CHAR(b.break_date, 'DD Mon YYYY') AS break_date,
-                TO_CHAR(b.break_out, 'HH24:MI') AS break_out,
+                TO_CHAR(b.break_date AT TIME ZONE 'Africa/Lusaka', 'DD Mon YYYY') AS break_date,
+                TO_CHAR(b.break_out AT TIME ZONE 'Africa/Lusaka', 'HH24:MI') AS break_out,
                 CASE 
-                    WHEN b.break_in IS NOT NULL THEN TO_CHAR(b.break_in, 'HH24:MI')
+                    WHEN b.break_in IS NOT NULL THEN TO_CHAR(b.break_in AT TIME ZONE 'Africa/Lusaka', 'HH24:MI')
                     ELSE 'Active'
                 END AS break_in,
                 CASE 
-                    WHEN b.break_in IS NOT NULL THEN TO_CHAR(b.break_in - b.break_out, 'HH24:MI')
+                    WHEN b.break_in IS NOT NULL THEN TO_CHAR((b.break_in - b.break_out) AT TIME ZONE 'Africa/Lusaka', 'HH24:MI')
                     ELSE 'In Progress'
                 END AS duration,
                 CASE 
@@ -1189,16 +1210,69 @@ app.get('/api/break-report', async (req, res) => {
         `;
         const params = [];
         let paramCount = 1;
+        
         if (employeeName) {
             query += ` AND e.name = $${paramCount}`;
             params.push(employeeName);
             paramCount++;
         }
+        
+        if (employeeType && employeeType !== 'all') {
+            query += ` AND e.employee_type = $${paramCount}`;
+            params.push(employeeType);
+            paramCount++;
+        }
+        
+        if (dateFrom) {
+            query += ` AND b.break_date >= $${paramCount}`;
+            params.push(dateFrom);
+            paramCount++;
+        }
+        
+        if (dateTo) {
+            query += ` AND b.break_date <= $${paramCount}`;
+            params.push(dateTo);
+            paramCount++;
+        }
+        
         query += ` ORDER BY b.break_date DESC, b.break_out DESC LIMIT 500`;
+        
         const result = await pool.query(query, params);
         res.json(result.rows);
     } catch (error) {
         console.error('Error in /api/break-report:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// =============================================
+// GET TOTAL BREAK TIME FOR SPECIFIC DATE
+// =============================================
+
+app.get('/api/total-break-time/:employeeName/:date', async (req, res) => {
+    const { employeeName, date } = req.params;
+    try {
+        const result = await pool.query(`
+            SELECT 
+                COALESCE(SUM(b.break_in - b.break_out), INTERVAL '0') AS total_break_time
+            FROM break_log b
+            JOIN employees e ON b.employee_id = e.id
+            WHERE e.name = $1 
+            AND b.break_date = $2::date
+            AND b.break_in IS NOT NULL
+        `, [employeeName, date]);
+        
+        const totalTime = result.rows[0].total_break_time || '00:00:00';
+        res.json({
+            employee_name: employeeName,
+            date: date,
+            total_break_time: totalTime,
+            formatted_time: typeof totalTime === 'object' ? 
+                `${String(totalTime.hours || 0).padStart(2, '0')}:${String(totalTime.minutes || 0).padStart(2, '0')}` : 
+                totalTime
+        });
+    } catch (error) {
+        console.error('Error getting total break time:', error);
         res.status(500).json({ error: error.message });
     }
 });
