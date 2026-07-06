@@ -1070,7 +1070,7 @@ function initBreakAlerts() {
 }
 
 // =============================================
-// BREAK FUNCTIONS - FIXED
+// BREAK FUNCTIONS - COMPLETE FIXED
 // =============================================
 
 async function onEmployeeChange() {
@@ -1148,7 +1148,10 @@ async function updateBreakStatus(employeeName) {
     }
 }
 
-// LOAD EMPLOYEE BREAKS - FIXED (handles array response)
+// =============================================
+// LOAD EMPLOYEE BREAKS - COMPLETE FIXED
+// =============================================
+
 async function loadEmployeeBreaks(employeeName) {
     const tbody = document.getElementById('breakBody');
     const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'sub-admin');
@@ -1160,13 +1163,17 @@ async function loadEmployeeBreaks(employeeName) {
 
     try {
         const response = await fetch(`${API_URL}/api/breaks/${encodeURIComponent(employeeName)}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         let data = await response.json();
         
         // Ensure data is an array
         if (!Array.isArray(data)) {
             console.warn('Data is not an array, converting:', data);
             if (data && typeof data === 'object') {
-                // If it's an object with a data property
                 if (Array.isArray(data.data)) {
                     data = data.data;
                 } else if (Array.isArray(data.rows)) {
@@ -1243,7 +1250,7 @@ async function loadEmployeeBreaks(employeeName) {
         }
     } catch (error) {
         console.error('Error loading breaks:', error);
-        tbody.innerHTML = '<tr><td colspan="9" class="no-data">Error loading breaks. Please refresh.</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="9" class="no-data" style="color:#dc3545;">❌ Error loading breaks: ${error.message}</td></tr>`;
         showAlert('Error loading breaks: ' + error.message, 'error');
     }
 }
@@ -1256,6 +1263,10 @@ function minutesToTime(minutes) {
     const mins = Math.round(minutes % 60);
     return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 }
+
+// =============================================
+// LOAD ACTIVE BREAKS - COMPLETE FIXED
+// =============================================
 
 async function loadActiveBreaks() {
     try {
@@ -1270,20 +1281,22 @@ async function loadActiveBreaks() {
         const currentBreakCount = document.getElementById('currentBreakCount');
         const headerActiveCount = document.getElementById('headerActiveCount');
 
-        const count = data && Array.isArray(data) ? data.length : 0;
+        // Ensure data is an array
+        const breaks = Array.isArray(data) ? data : [];
+        const count = breaks.length;
         
         if (badge) badge.innerHTML = `<i class="fas fa-users"></i> ${count} Active`;
         if (headerActiveCount) headerActiveCount.textContent = count;
         if (countSpan) countSpan.textContent = `(${count})`;
         if (currentBreakCount) currentBreakCount.textContent = count;
 
-        if (!data || data.length === 0) {
+        if (!breaks || breaks.length === 0) {
             container.innerHTML = '<span style="color: #adb5bd; font-size:13px;">✅ No one is on break right now</span>';
             return;
         }
 
         container.innerHTML = '';
-        data.forEach(person => {
+        breaks.forEach(person => {
             const div = document.createElement('div');
             div.className = 'active-person';
             const typeIcon = person.employee_type === 'local' ? '🇱🇰' : '🌍';
@@ -1294,10 +1307,10 @@ async function loadActiveBreaks() {
             
             div.innerHTML = `
                 <span class="dot"></span>
-                <strong>${person.employee_name}</strong>
+                <strong>${person.employee_name || 'Unknown'}</strong>
                 <span style="font-size:10px; background:#e9ecef; padding:1px 8px; border-radius:10px;">${person.department || 'N/A'}</span>
                 <span style="font-size:10px;">${typeIcon}</span>
-                <span style="font-size:11px; color:#888;">since ${person.break_out}</span>
+                <span style="font-size:11px; color:#888;">since ${person.break_out || '--:--'}</span>
                 <span style="font-size:10px; color:#1a73e8; margin-left:4px;">
                     <i class="fas fa-chevron-right"></i>
                 </span>
@@ -1306,6 +1319,10 @@ async function loadActiveBreaks() {
         });
     } catch (error) {
         console.error('Error loading active breaks:', error);
+        const container = document.getElementById('activeBreaksList');
+        if (container) {
+            container.innerHTML = '<span style="color: #dc3545; font-size:13px;">❌ Error loading active breaks</span>';
+        }
     }
 }
 
@@ -1427,7 +1444,7 @@ async function deleteBreak(id) {
 }
 
 // =============================================
-// REPORT FUNCTIONS
+// REPORT FUNCTIONS - COMPLETE FIXED
 // =============================================
 
 async function loadFullReport() {
@@ -1438,7 +1455,28 @@ async function loadFullReport() {
         }
         
         const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         let data = await response.json();
+        
+        // Ensure data is an array
+        if (!Array.isArray(data)) {
+            console.warn('Report data is not an array:', data);
+            if (data && typeof data === 'object') {
+                if (Array.isArray(data.data)) {
+                    data = data.data;
+                } else if (Array.isArray(data.rows)) {
+                    data = data.rows;
+                } else {
+                    data = [];
+                }
+            } else {
+                data = [];
+            }
+        }
         
         if (currentUser && currentUser.role === 'user') {
             data = data.filter(row => row.employee_name === currentUser.username);
@@ -1482,13 +1520,13 @@ async function loadFullReport() {
             }
             
             tr.innerHTML = `
-                <td><strong>${row.break_date}</strong></td>
-                <td><strong>${row.employee_name}</strong></td>
+                <td><strong>${row.break_date || 'N/A'}</strong></td>
+                <td><strong>${row.employee_name || 'Unknown'}</strong></td>
                 <td>${row.department || '-'}</td>
                 <td>${typeIcon}</td>
-                <td>${row.break_out}</td>
-                <td>${row.break_in}</td>
-                <td style="font-weight:600;">${row.duration}</td>
+                <td>${row.break_out || '--:--'}</td>
+                <td>${row.break_in || 'Active'}</td>
+                <td style="font-weight:600;">${row.duration || '--:--'}</td>
                 <td>${statusBadge}</td>
             `;
             
@@ -1522,10 +1560,11 @@ async function loadFullReport() {
             <tr>
                 <td colspan="8" style="text-align: center; padding: 40px; color: #dc3545; font-size: 14px;">
                     <i class="fas fa-exclamation-triangle" style="font-size: 28px; display: block; margin-bottom: 10px;"></i>
-                    Error loading report
+                    Error loading report: ${error.message}
                 </td>
             </tr>
         `;
+        showAlert('Error loading report: ' + error.message, 'error');
     }
 }
 
