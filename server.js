@@ -732,10 +732,10 @@ async function canTakeBreak(employeeName) {
 }
 
 // =============================================
-// BREAK ROUTES - COMPLETE FIXED (No TO_CHAR on TIME with timezone)
+// BREAK ROUTES - COMPLETE FIXED
 // =============================================
 
-// GET ACTIVE BREAKS - FIXED
+// GET ACTIVE BREAKS - FIXED (No date filter, shows all active breaks)
 app.get('/api/active-breaks', async (req, res) => {
     console.log('🔍 Fetching active breaks...');
     try {
@@ -751,8 +751,7 @@ app.get('/api/active-breaks', async (req, res) => {
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
             LEFT JOIN departments d ON e.department_id = d.id
-            WHERE b.break_in IS NULL 
-            AND b.break_date = CURRENT_DATE AT TIME ZONE 'Africa/Lusaka'
+            WHERE b.break_in IS NULL
             ORDER BY b.break_out::time ASC
         `;
         const result = await pool.query(query);
@@ -1192,7 +1191,7 @@ app.get('/api/break-report', async (req, res) => {
 });
 
 // =============================================
-// DEBUG ROUTE
+// DEBUG ROUTE - Check what's in the database
 // =============================================
 
 app.get('/api/debug/breaks', async (req, res) => {
