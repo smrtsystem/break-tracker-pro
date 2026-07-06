@@ -237,6 +237,8 @@ async function runAutoMigration() {
             CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department_id);
             CREATE INDEX IF NOT EXISTS idx_employees_name ON employees(name);
             CREATE INDEX IF NOT EXISTS idx_employees_type ON employees(employee_type);
+            CREATE INDEX IF NOT EXISTS idx_break_log_employee_date ON break_log(employee_id, break_date);
+            CREATE INDEX IF NOT EXISTS idx_break_log_active ON break_log(employee_id, break_date) WHERE break_in IS NULL;
         `);
 
         // Create system_settings table
@@ -732,7 +734,7 @@ async function canTakeBreak(employeeName) {
 // BREAK ROUTES - COMPLETE FIXED
 // =============================================
 
-// GET ACTIVE BREAKS
+// GET ACTIVE BREAKS - FIXED
 app.get('/api/active-breaks', async (req, res) => {
     try {
         const query = `
@@ -760,23 +762,12 @@ app.get('/api/active-breaks', async (req, res) => {
     }
 });
 
-// GET BREAKS FOR SPECIFIC EMPLOYEE
+// GET BREAKS FOR SPECIFIC EMPLOYEE - FIXED
 app.get('/api/breaks/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     console.log('📊 Fetching breaks for:', employeeName);
     
     try {
-        // First check if employee exists
-        const empCheck = await pool.query(
-            'SELECT id FROM employees WHERE name = $1',
-            [employeeName]
-        );
-        
-        if (empCheck.rows.length === 0) {
-            console.log('❌ Employee not found:', employeeName);
-            return res.json([]);
-        }
-        
         const query = `
             SELECT 
                 b.id AS break_id,
@@ -1129,7 +1120,7 @@ app.get('/api/break-alerts', async (req, res) => {
 });
 
 // =============================================
-// BREAK REPORT ROUTE - FIXED
+// BREAK REPORT ROUTE - FIXED WITH TOTAL TIME
 // =============================================
 
 app.get('/api/break-report', async (req, res) => {
@@ -1154,7 +1145,12 @@ app.get('/api/break-report', async (req, res) => {
                 CASE 
                     WHEN b.break_in IS NULL THEN 'On Break'
                     ELSE 'Completed'
-                END AS status
+                END AS status,
+                -- Calculate duration in minutes for total
+                CASE 
+                    WHEN b.break_in IS NOT NULL THEN EXTRACT(EPOCH FROM (b.break_in - b.break_out)) / 60
+                    ELSE 0
+                END AS duration_minutes
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
             LEFT JOIN departments d ON e.department_id = d.id
@@ -1191,10 +1187,27 @@ app.get('/api/break-report', async (req, res) => {
         
         const result = await pool.query(query, params);
         console.log('✅ Report data found:', result.rows.length);
-        res.json(result.rows);
+        
+        // Calculate total duration for the report
+        let totalMinutes = 0;
+        result.rows.forEach(row => {
+            if (row.duration_minutes > 0) {
+                totalMinutes += parseFloat(row.duration_minutes);
+            }
+        });
+        
+        const totalHours = Math.floor(totalMinutes / 60);
+        const totalMins = Math.round(totalMinutes % 60);
+        const totalTime = `${String(totalHours).padStart(2, '0')}:${String(totalMins).padStart(2, '0')}`;
+        
+        res.json({
+            data: result.rows,
+            total_time: totalTime,
+            total_minutes: totalMinutes
+        });
     } catch (error) {
         console.error('❌ Error in /api/break-report:', error);
-        res.json([]);
+        res.json({ data: [], total_time: '00:00', total_minutes: 0 });
     }
 });
 
