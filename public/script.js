@@ -16,7 +16,6 @@ let currentDepartmentFilter = 'all';
 let editEmployeeId = null;
 let breakAlerts = [];
 let alertInterval = null;
-let congratulationsMessage = null;
 let congratsInterval = null;
 
 // Check if user is logged in
@@ -78,7 +77,6 @@ function logout() {
 
 function updateClock() {
     const now = new Date();
-    // Format time in Zambian timezone (CAT - UTC+2)
     const options = {
         timeZone: 'Africa/Lusaka',
         hour: '2-digit',
@@ -548,9 +546,12 @@ async function loadUsers() {
                         <button class="btn btn-warning btn-sm" onclick="resetPassword('${user.username}')" title="Reset Password">
                             <i class="fas fa-key"></i>
                         </button>
-                        <button class="btn btn-secondary btn-sm" onclick="toggleUserRole('${user.username}', '${user.role}', ${user.can_manage_users})" title="Toggle Role">
-                            <i class="fas fa-exchange-alt"></i>
-                        </button>
+                        <!-- Only Admin can change role -->
+                        ${currentUser && currentUser.role === 'admin' ? `
+                            <button class="btn btn-secondary btn-sm" onclick="toggleUserRole('${user.username}', '${user.role}', ${user.can_manage_users})" title="Toggle Role">
+                                <i class="fas fa-exchange-alt"></i>
+                            </button>
+                        ` : ''}
                         <button class="btn btn-danger btn-sm" onclick="deleteUser('${user.username}')" title="Delete User">
                             <i class="fas fa-trash"></i>
                         </button>
@@ -655,9 +656,16 @@ async function resetPassword(username) {
     }
 }
 
+// Only Admin can toggle user role
 async function toggleUserRole(username, currentRole, currentCanManage) {
     if (username === 'admin') {
         showAlert('Cannot change main admin!', 'error');
+        return;
+    }
+    
+    // Check if current user is admin
+    if (currentUser && currentUser.role !== 'admin') {
+        showAlert('❌ Only Admin can change user roles!', 'error');
         return;
     }
     
@@ -671,14 +679,19 @@ async function toggleUserRole(username, currentRole, currentCanManage) {
         const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(username)}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ role: newRole, can_manage_users: newCanManage })
+            body: JSON.stringify({ 
+                role: newRole, 
+                can_manage_users: newCanManage,
+                currentUser: currentUser 
+            })
         });
 
         if (response.ok) {
             showAlert(`✅ User "${username}" updated!`, 'success');
             await loadUsers();
         } else {
-            showAlert('❌ Error updating user', 'error');
+            const result = await response.json();
+            showAlert('❌ ' + result.error, 'error');
         }
     } catch (error) {
         showAlert('❌ Error connecting to server', 'error');
@@ -840,11 +853,10 @@ function resetToDefault() {
 }
 
 // =============================================
-// CONGRATULATIONS MESSAGE - SHOW ON HOMEPAGE
+// CONGRATULATIONS MESSAGE
 // =============================================
 
 function initCongratulationsMessage() {
-    console.log('🎉 Initializing congratulations message checker...');
     if (congratsInterval) clearInterval(congratsInterval);
     congratsInterval = setInterval(() => {
         fetchCongratulationsMessage();
@@ -854,14 +866,10 @@ function initCongratulationsMessage() {
 
 async function fetchCongratulationsMessage() {
     try {
-        console.log('🔍 Fetching congratulations message...');
         const response = await fetch(`${API_URL}/api/break-alerts`);
         const data = await response.json();
         
-        console.log('📊 Break alerts response:', data);
-        
         if (data.success && data.alerts && data.alerts.length > 0) {
-            console.log('🎉 Found', data.alerts.length, 'employee(s) who exceeded limit');
             const exceeded = data.alerts;
             let message = '';
             
@@ -876,7 +884,6 @@ async function fetchCongratulationsMessage() {
             
             showHomepageCongratulations(message);
         } else {
-            console.log('✅ No employee has exceeded break limit');
             hideCongratulationsBanner();
         }
     } catch (error) {
@@ -885,7 +892,6 @@ async function fetchCongratulationsMessage() {
 }
 
 function showHomepageCongratulations(message) {
-    console.log('🎉 Showing congratulations banner:', message);
     let banner = document.getElementById('congratulationsBanner');
     
     if (!banner) {
@@ -1091,10 +1097,6 @@ async function onEmployeeChange() {
     await updateBreakStatus(employeeName);
 }
 
-// =============================================
-// UPDATE BREAK STATUS - No Break Limit Card, Status Always Available
-// =============================================
-
 async function updateBreakStatus(employeeName) {
     try {
         const response = await fetch(`${API_URL}/api/break-status/${encodeURIComponent(employeeName)}`);
@@ -1114,7 +1116,7 @@ async function updateBreakStatus(employeeName) {
             return;
         }
         
-        // ALWAYS show Status: Available (green) - no limit exceeded message in status
+        // ALWAYS show Status: Available (green)
         statusDisplay.innerHTML = '🟢 Status: <strong style="color:#28a745;">Available</strong>';
         statusDisplay.style.background = '#e8f5e9';
         statusDisplay.style.border = 'none';
@@ -1152,6 +1154,10 @@ async function updateBreakStatus(employeeName) {
     }
 }
 
+// =============================================
+// LOAD EMPLOYEE BREAKS WITH TOTAL TIME
+// =============================================
+
 async function loadEmployeeBreaks(employeeName) {
     const tbody = document.getElementById('breakBody');
     const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'sub-admin');
@@ -1171,13 +1177,24 @@ async function loadEmployeeBreaks(employeeName) {
         }
 
         tbody.innerHTML = '';
+        let currentDate = '';
+        let totalDuration = 0;
+        
         data.forEach(row => {
             const tr = document.createElement('tr');
             if (row.is_active) tr.className = 'active-break';
+            
+            // Calculate duration in minutes for total
+            if (row["Duration"] !== '--:--' && row["Duration"] !== 'Active') {
+                const durParts = row["Duration"].split(':');
+                totalDuration += parseInt(durParts[0]) * 60 + parseInt(durParts[1]);
+            }
 
             const statusBadge = row.is_active ?
                 '<span class="badge badge-warning">⏳ On Break</span>' :
                 '<span class="badge badge-success">✅ Completed</span>';
+            
+            const typeIcon = row.employee_type === 'local' ? '🇱🇰' : '🌍';
 
             const deleteButton = isAdmin ? `
                 <button class="btn btn-danger btn-sm" onclick="deleteBreak(${row.break_id})">
@@ -1189,7 +1206,7 @@ async function loadEmployeeBreaks(employeeName) {
                 <td><strong>${row.date}</strong></td>
                 <td>${row.employee_name || employeeName}</td>
                 <td>${row.department || '-'}</td>
-                <td>${row.employee_type === 'local' ? '🇱🇰 Local' : '🌍 Expat'}</td>
+                <td>${typeIcon}</td>
                 <td>${row["Break"]}</td>
                 <td>${row["IN"]}</td>
                 <td>${row["Duration"]}</td>
@@ -1198,10 +1215,36 @@ async function loadEmployeeBreaks(employeeName) {
             `;
             tbody.appendChild(tr);
         });
+        
+        // Add total row
+        if (totalDuration > 0) {
+            const totalTime = minutesToTime(totalDuration);
+            const totalRow = document.createElement('tr');
+            totalRow.className = 'total-row';
+            totalRow.style.background = '#e9ecef';
+            totalRow.innerHTML = `
+                <td colspan="8" style="text-align:right; font-weight:700; background:#e9ecef; padding:10px 14px;">
+                    <i class="fas fa-clock"></i> Total Break Time:
+                </td>
+                <td colspan="1" style="font-weight:700; background:#e9ecef; color:#1a73e8; padding:10px 14px;">
+                    ${totalTime}
+                </td>
+            `;
+            tbody.appendChild(totalRow);
+        }
     } catch (error) {
         console.error('Error loading breaks:', error);
         tbody.innerHTML = '<tr><td colspan="9" class="no-data">Error loading breaks</td></tr>';
     }
+}
+
+function minutesToTime(minutes) {
+    if (typeof minutes !== 'number' || isNaN(minutes) || minutes < 0) {
+        return '00:00';
+    }
+    const hrs = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 }
 
 async function loadActiveBreaks() {
@@ -1274,7 +1317,6 @@ async function breakOut() {
     }
 
     const now = new Date();
-    // Use Zambian time
     const options = {
         timeZone: 'Africa/Lusaka',
         hour: '2-digit',
@@ -1315,7 +1357,6 @@ async function breakIn() {
     }
 
     const now = new Date();
-    // Use Zambian time
     const options = {
         timeZone: 'Africa/Lusaka',
         hour: '2-digit',
@@ -1406,6 +1447,10 @@ async function loadFullReport() {
         }
 
         tbody.innerHTML = '';
+        let totalDuration = 0;
+        let localCount = 0;
+        let expatCount = 0;
+        
         data.forEach(row => {
             const tr = document.createElement('tr');
             const statusBadge = row.status === 'On Break' ?
@@ -1413,6 +1458,17 @@ async function loadFullReport() {
                 '<span class="badge badge-success">✅ Completed</span>';
             
             const typeIcon = row.employee_type === 'local' ? '🇱🇰 Local' : '🌍 Expat';
+            
+            if (row.employee_type === 'local') localCount++;
+            else if (row.employee_type === 'expat') expatCount++;
+            
+            // Calculate total duration
+            if (row.duration !== 'In Progress' && row.duration !== 'Active') {
+                const durParts = row.duration.split(':');
+                if (durParts.length >= 2) {
+                    totalDuration += parseInt(durParts[0]) * 60 + parseInt(durParts[1]);
+                }
+            }
             
             tr.innerHTML = `
                 <td><strong>${row.break_date}</strong></td>
@@ -1432,7 +1488,24 @@ async function loadFullReport() {
             tbody.appendChild(tr);
         });
         
-        updateReportStats(data);
+        // Add total row
+        if (totalDuration > 0) {
+            const totalTime = minutesToTime(totalDuration);
+            const totalRow = document.createElement('tr');
+            totalRow.className = 'total-row';
+            totalRow.style.background = '#e9ecef';
+            totalRow.innerHTML = `
+                <td colspan="7" style="text-align:right; font-weight:700; background:#e9ecef; padding:10px 14px;">
+                    <i class="fas fa-clock"></i> <strong>Total Break Time:</strong>
+                </td>
+                <td colspan="1" style="font-weight:700; background:#e9ecef; color:#1a73e8; padding:10px 14px;">
+                    ${totalTime}
+                </td>
+            `;
+            tbody.appendChild(totalRow);
+        }
+        
+        updateReportStats(data, localCount, expatCount);
     } catch (error) {
         console.error('Error loading report:', error);
         document.getElementById('reportBody').innerHTML = `
@@ -1446,7 +1519,7 @@ async function loadFullReport() {
     }
 }
 
-function updateReportStats(data) {
+function updateReportStats(data, localCount, expatCount) {
     const total = data ? data.length : 0;
     const completed = data ? data.filter(row => row.status === 'Completed').length : 0;
     const active = data ? data.filter(row => row.status === 'On Break').length : 0;
@@ -1454,26 +1527,36 @@ function updateReportStats(data) {
     document.getElementById('reportTotalRecords').textContent = total;
     document.getElementById('reportCompletedCount').textContent = completed;
     document.getElementById('reportActiveCount').textContent = active;
+    document.getElementById('reportLocalCount').textContent = localCount || 0;
+    document.getElementById('reportExpatCount').textContent = expatCount || 0;
 }
 
 function applyReportFilters() {
     const employeeFilter = document.getElementById('reportEmployeeFilter').value;
     const dateFrom = document.getElementById('reportDateFrom').value;
     const dateTo = document.getElementById('reportDateTo').value;
+    const typeFilter = document.getElementById('reportTypeFilter').value;
     const statusFilter = document.getElementById('reportStatusFilter').value;
     
     const rows = document.querySelectorAll('#reportBody tr');
     let visibleCount = 0;
     let completedCount = 0;
     let activeCount = 0;
+    let localCount = 0;
+    let expatCount = 0;
     
     rows.forEach(row => {
+        if (row.classList.contains('total-row')) {
+            row.style.display = 'none';
+            return;
+        }
         const cells = row.querySelectorAll('td');
         if (cells.length < 8) return;
         
         let show = true;
         const rowEmployee = cells[1]?.textContent?.trim() || '';
         const rowDate = cells[0]?.textContent?.trim() || '';
+        const rowType = cells[3]?.textContent?.trim() || '';
         const rowStatus = cells[7]?.textContent?.trim() || '';
         
         if (currentUser && currentUser.role === 'user') {
@@ -1495,6 +1578,11 @@ function applyReportFilters() {
             if (rowDateObj > toDateObj) show = false;
         }
         
+        if (typeFilter && typeFilter !== 'all') {
+            const typeText = rowType.includes('Local') ? 'local' : 'expat';
+            if (typeText !== typeFilter) show = false;
+        }
+        
         if (statusFilter) {
             const statusText = rowStatus.includes('Completed') ? 'Completed' : 'On Break';
             if (statusText !== statusFilter) show = false;
@@ -1506,12 +1594,16 @@ function applyReportFilters() {
             visibleCount++;
             if (rowStatus.includes('Completed')) completedCount++;
             else if (rowStatus.includes('On Break')) activeCount++;
+            if (rowType.includes('Local')) localCount++;
+            else if (rowType.includes('Expat')) expatCount++;
         }
     });
     
     document.getElementById('reportTotalRecords').textContent = visibleCount;
     document.getElementById('reportCompletedCount').textContent = completedCount;
     document.getElementById('reportActiveCount').textContent = activeCount;
+    document.getElementById('reportLocalCount').textContent = localCount;
+    document.getElementById('reportExpatCount').textContent = expatCount;
     
     showAlert(`✅ Filter applied: ${visibleCount} records found`, 'success');
 }
@@ -1520,14 +1612,21 @@ function resetReportFilters() {
     document.getElementById('reportEmployeeFilter').value = '';
     document.getElementById('reportDateFrom').value = '';
     document.getElementById('reportDateTo').value = '';
+    document.getElementById('reportTypeFilter').value = 'all';
     document.getElementById('reportStatusFilter').value = '';
     
     const rows = document.querySelectorAll('#reportBody tr');
     let totalCount = 0;
     let completedCount = 0;
     let activeCount = 0;
+    let localCount = 0;
+    let expatCount = 0;
     
     rows.forEach(row => {
+        if (row.classList.contains('total-row')) {
+            row.style.display = '';
+            return;
+        }
         const cells = row.querySelectorAll('td');
         if (cells.length < 8) return;
         
@@ -1542,14 +1641,19 @@ function resetReportFilters() {
         if (show) {
             totalCount++;
             const statusText = cells[7]?.textContent?.trim() || '';
+            const typeText = cells[3]?.textContent?.trim() || '';
             if (statusText.includes('Completed')) completedCount++;
             else if (statusText.includes('On Break')) activeCount++;
+            if (typeText.includes('Local')) localCount++;
+            else if (typeText.includes('Expat')) expatCount++;
         }
     });
     
     document.getElementById('reportTotalRecords').textContent = totalCount;
     document.getElementById('reportCompletedCount').textContent = completedCount;
     document.getElementById('reportActiveCount').textContent = activeCount;
+    document.getElementById('reportLocalCount').textContent = localCount;
+    document.getElementById('reportExpatCount').textContent = expatCount;
     
     showAlert('✅ Filters reset', 'success');
 }
@@ -1560,7 +1664,7 @@ function exportReport() {
     let count = 0;
     
     rows.forEach(row => {
-        if (row.style.display === 'none') return;
+        if (row.style.display === 'none' || row.classList.contains('total-row')) return;
         const cells = row.querySelectorAll('td');
         if (cells.length < 8) return;
         
@@ -1598,7 +1702,7 @@ function exportReportPDF() {
     let visibleCount = 0;
     
     rows.forEach(row => {
-        if (row.style.display !== 'none') {
+        if (row.style.display !== 'none' && !row.classList.contains('total-row')) {
             const cells = row.querySelectorAll('td');
             if (cells.length >= 8) visibleCount++;
         }
@@ -1614,7 +1718,7 @@ function exportReportPDF() {
     
     let tableRows = '';
     rows.forEach(row => {
-        if (row.style.display === 'none') return;
+        if (row.style.display === 'none' || row.classList.contains('total-row')) return;
         const cells = row.querySelectorAll('td');
         if (cells.length < 8) return;
         
@@ -1660,6 +1764,8 @@ function exportReportPDF() {
                 Total Records: ${document.getElementById('reportTotalRecords')?.textContent || 0} | 
                 Completed: ${document.getElementById('reportCompletedCount')?.textContent || 0} | 
                 On Break: ${document.getElementById('reportActiveCount')?.textContent || 0}
+                🌍 Expat: ${document.getElementById('reportExpatCount')?.textContent || 0} | 
+                🇱🇰 Local: ${document.getElementById('reportLocalCount')?.textContent || 0}
             </div>
             <table>
                 <thead>
@@ -1697,7 +1803,6 @@ async function refreshData() {
 function showAlert(message, type) {
     const alertDiv = document.getElementById('alert');
     alertDiv.textContent = message;
-    
     alertDiv.className = 'alert';
     
     if (type === 'success') {
