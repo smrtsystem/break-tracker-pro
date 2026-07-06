@@ -1171,7 +1171,6 @@ async function loadEmployeeBreaks(employeeName) {
         
         let data = await response.json();
         
-        // Ensure data is an array
         if (!Array.isArray(data)) {
             console.warn('Data is not an array, converting:', data);
             if (data && typeof data === 'object') {
@@ -1282,7 +1281,6 @@ async function loadActiveBreaks() {
         const currentBreakCount = document.getElementById('currentBreakCount');
         const headerActiveCount = document.getElementById('headerActiveCount');
 
-        // Ensure data is an array
         const breaks = Array.isArray(data) ? data : [];
         const count = breaks.length;
         
@@ -1463,7 +1461,6 @@ async function loadFullReport() {
         
         let data = await response.json();
         
-        // Ensure data is an array
         if (!Array.isArray(data)) {
             console.warn('Report data is not an array:', data);
             if (data && typeof data === 'object') {
