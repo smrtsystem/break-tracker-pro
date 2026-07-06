@@ -18,7 +18,6 @@ let breakAlerts = [];
 let alertInterval = null;
 let congratsInterval = null;
 
-// Check if user is logged in
 function checkAuth() {
     const userData = sessionStorage.getItem('user');
     if (!userData) {
@@ -34,7 +33,6 @@ function checkAuth() {
     }
 }
 
-// Update UI based on user role
 function updateUIForRole() {
     const isAdmin = currentUser && currentUser.role === 'admin';
     const isSubAdmin = currentUser && currentUser.role === 'sub-admin';
@@ -65,14 +63,13 @@ function updateUIForRole() {
     }
 }
 
-// Logout
 function logout() {
     sessionStorage.removeItem('user');
     window.location.href = 'login.html';
 }
 
 // =============================================
-// LIVE CLOCK - ZAMBIAN TIME (CAT - UTC+2)
+// LIVE CLOCK - ZAMBIAN TIME
 // =============================================
 
 function updateClock() {
@@ -546,7 +543,6 @@ async function loadUsers() {
                         <button class="btn btn-warning btn-sm" onclick="resetPassword('${user.username}')" title="Reset Password">
                             <i class="fas fa-key"></i>
                         </button>
-                        <!-- Only Admin can change role -->
                         ${currentUser && currentUser.role === 'admin' ? `
                             <button class="btn btn-secondary btn-sm" onclick="toggleUserRole('${user.username}', '${user.role}', ${user.can_manage_users})" title="Toggle Role">
                                 <i class="fas fa-exchange-alt"></i>
@@ -656,14 +652,12 @@ async function resetPassword(username) {
     }
 }
 
-// Only Admin can toggle user role
 async function toggleUserRole(username, currentRole, currentCanManage) {
     if (username === 'admin') {
         showAlert('Cannot change main admin!', 'error');
         return;
     }
     
-    // Check if current user is admin
     if (currentUser && currentUser.role !== 'admin') {
         showAlert('❌ Only Admin can change user roles!', 'error');
         return;
@@ -1073,7 +1067,7 @@ function initBreakAlerts() {
 }
 
 // =============================================
-// BREAK FUNCTIONS
+// BREAK FUNCTIONS - FIXED
 // =============================================
 
 async function onEmployeeChange() {
@@ -1116,14 +1110,12 @@ async function updateBreakStatus(employeeName) {
             return;
         }
         
-        // ALWAYS show Status: Available (green)
         statusDisplay.innerHTML = '🟢 Status: <strong style="color:#28a745;">Available</strong>';
         statusDisplay.style.background = '#e8f5e9';
         statusDisplay.style.border = 'none';
         statusDisplay.style.padding = '10px 16px';
         statusDisplay.style.borderRadius = '10px';
         
-        // Manage buttons
         if (data.is_on_break) {
             breakOutBtn.disabled = true;
             breakOutBtn.style.opacity = '0.5';
@@ -1136,7 +1128,6 @@ async function updateBreakStatus(employeeName) {
             breakInBtn.style.opacity = '0.5';
         }
         
-        // REMOVE Break Limit Card from stats
         const statsDiv = document.getElementById('stats');
         if (statsDiv) {
             const limitCard = statsDiv.querySelector('.stat-card.limit-card');
@@ -1154,10 +1145,7 @@ async function updateBreakStatus(employeeName) {
     }
 }
 
-// =============================================
-// LOAD EMPLOYEE BREAKS WITH TOTAL TIME
-// =============================================
-
+// LOAD EMPLOYEE BREAKS - FIXED
 async function loadEmployeeBreaks(employeeName) {
     const tbody = document.getElementById('breakBody');
     const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'sub-admin');
@@ -1171,23 +1159,25 @@ async function loadEmployeeBreaks(employeeName) {
         const response = await fetch(`${API_URL}/api/breaks/${encodeURIComponent(employeeName)}`);
         const data = await response.json();
 
+        console.log('📊 Break data received:', data);
+
         if (!data || data.length === 0) {
             tbody.innerHTML = '<tr><td colspan="9" class="no-data">No breaks found. Click "Break" to start!</td></tr>';
             return;
         }
 
         tbody.innerHTML = '';
-        let currentDate = '';
         let totalDuration = 0;
         
         data.forEach(row => {
             const tr = document.createElement('tr');
             if (row.is_active) tr.className = 'active-break';
             
-            // Calculate duration in minutes for total
-            if (row["Duration"] !== '--:--' && row["Duration"] !== 'Active') {
-                const durParts = row["Duration"].split(':');
-                totalDuration += parseInt(durParts[0]) * 60 + parseInt(durParts[1]);
+            if (row.Duration && row.Duration !== '--:--' && row.Duration !== 'Active') {
+                const durParts = row.Duration.split(':');
+                if (durParts.length >= 2) {
+                    totalDuration += parseInt(durParts[0]) * 60 + parseInt(durParts[1]);
+                }
             }
 
             const statusBadge = row.is_active ?
@@ -1203,20 +1193,19 @@ async function loadEmployeeBreaks(employeeName) {
             ` : `<span style="color:#888; font-size:11px;">-</span>`;
 
             tr.innerHTML = `
-                <td><strong>${row.date}</strong></td>
+                <td><strong>${row.date || 'N/A'}</strong></td>
                 <td>${row.employee_name || employeeName}</td>
                 <td>${row.department || '-'}</td>
                 <td>${typeIcon}</td>
-                <td>${row["Break"]}</td>
-                <td>${row["IN"]}</td>
-                <td>${row["Duration"]}</td>
+                <td>${row.Break || '--:--'}</td>
+                <td>${row.IN || 'Active'}</td>
+                <td>${row.Duration || '--:--'}</td>
                 <td>${statusBadge}</td>
                 <td>${deleteButton}</td>
             `;
             tbody.appendChild(tr);
         });
         
-        // Add total row
         if (totalDuration > 0) {
             const totalTime = minutesToTime(totalDuration);
             const totalRow = document.createElement('tr');
@@ -1224,7 +1213,7 @@ async function loadEmployeeBreaks(employeeName) {
             totalRow.style.background = '#e9ecef';
             totalRow.innerHTML = `
                 <td colspan="8" style="text-align:right; font-weight:700; background:#e9ecef; padding:10px 14px;">
-                    <i class="fas fa-clock"></i> Total Break Time:
+                    <i class="fas fa-clock"></i> <strong>Total Break Time:</strong>
                 </td>
                 <td colspan="1" style="font-weight:700; background:#e9ecef; color:#1a73e8; padding:10px 14px;">
                     ${totalTime}
@@ -1234,7 +1223,8 @@ async function loadEmployeeBreaks(employeeName) {
         }
     } catch (error) {
         console.error('Error loading breaks:', error);
-        tbody.innerHTML = '<tr><td colspan="9" class="no-data">Error loading breaks</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="no-data">Error loading breaks. Please refresh.</td></tr>';
+        showAlert('Error loading breaks: ' + error.message, 'error');
     }
 }
 
@@ -1252,13 +1242,15 @@ async function loadActiveBreaks() {
         const response = await fetch(`${API_URL}/api/active-breaks`);
         const data = await response.json();
 
+        console.log('✅ Active breaks data:', data);
+
         const container = document.getElementById('activeBreaksList');
         const badge = document.getElementById('activeCountBadge');
         const countSpan = document.getElementById('activeCount');
         const currentBreakCount = document.getElementById('currentBreakCount');
         const headerActiveCount = document.getElementById('headerActiveCount');
 
-        const count = data ? data.length : 0;
+        const count = data && Array.isArray(data) ? data.length : 0;
         
         if (badge) badge.innerHTML = `<i class="fas fa-users"></i> ${count} Active`;
         if (headerActiveCount) headerActiveCount.textContent = count;
@@ -1462,7 +1454,6 @@ async function loadFullReport() {
             if (row.employee_type === 'local') localCount++;
             else if (row.employee_type === 'expat') expatCount++;
             
-            // Calculate total duration
             if (row.duration !== 'In Progress' && row.duration !== 'Active') {
                 const durParts = row.duration.split(':');
                 if (durParts.length >= 2) {
@@ -1488,7 +1479,6 @@ async function loadFullReport() {
             tbody.appendChild(tr);
         });
         
-        // Add total row
         if (totalDuration > 0) {
             const totalTime = minutesToTime(totalDuration);
             const totalRow = document.createElement('tr');
