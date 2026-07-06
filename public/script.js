@@ -1131,6 +1131,7 @@ async function updateBreakStatus(employeeName) {
             breakInBtn.style.opacity = '0.5';
         }
         
+        // Remove Break Limit Card
         const statsDiv = document.getElementById('stats');
         if (statsDiv) {
             const limitCard = statsDiv.querySelector('.stat-card.limit-card');
@@ -1444,7 +1445,7 @@ async function deleteBreak(id) {
 }
 
 // =============================================
-// LOAD FULL REPORT - FIXED WITH TOTAL TIME
+// REPORT FUNCTIONS - COMPLETE FIXED
 // =============================================
 
 async function loadFullReport() {
@@ -1460,16 +1461,22 @@ async function loadFullReport() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const result = await response.json();
-        
-        // Handle new response format with data and total_time
-        let data = result.data || [];
-        const totalTime = result.total_time || '00:00';
+        let data = await response.json();
         
         // Ensure data is an array
         if (!Array.isArray(data)) {
             console.warn('Report data is not an array:', data);
-            data = [];
+            if (data && typeof data === 'object') {
+                if (Array.isArray(data.data)) {
+                    data = data.data;
+                } else if (Array.isArray(data.rows)) {
+                    data = data.rows;
+                } else {
+                    data = [];
+                }
+            } else {
+                data = [];
+            }
         }
         
         if (currentUser && currentUser.role === 'user') {
@@ -1506,7 +1513,6 @@ async function loadFullReport() {
             if (row.employee_type === 'local') localCount++;
             else if (row.employee_type === 'expat') expatCount++;
             
-            // Calculate total duration for display
             if (row.duration !== 'In Progress' && row.duration !== 'Active') {
                 const durParts = row.duration.split(':');
                 if (durParts.length >= 2) {
@@ -1532,20 +1538,21 @@ async function loadFullReport() {
             tbody.appendChild(tr);
         });
         
-        // Add total row with the total time from server
-        const totalRow = document.createElement('tr');
-        totalRow.className = 'total-row';
-        totalRow.style.background = '#e9ecef';
-        totalRow.style.fontWeight = '700';
-        totalRow.innerHTML = `
-            <td colspan="7" style="text-align:right; background:#e9ecef; padding:12px 16px; font-weight:700;">
-                <i class="fas fa-clock"></i> <strong>Total Break Time:</strong>
-            </td>
-            <td colspan="1" style="background:#e9ecef; color:#1a73e8; padding:12px 16px; font-weight:700; font-size:15px;">
-                ${totalTime}
-            </td>
-        `;
-        tbody.appendChild(totalRow);
+        if (totalDuration > 0) {
+            const totalTime = minutesToTime(totalDuration);
+            const totalRow = document.createElement('tr');
+            totalRow.className = 'total-row';
+            totalRow.style.background = '#e9ecef';
+            totalRow.innerHTML = `
+                <td colspan="7" style="text-align:right; font-weight:700; background:#e9ecef; padding:10px 14px;">
+                    <i class="fas fa-clock"></i> <strong>Total Break Time:</strong>
+                </td>
+                <td colspan="1" style="font-weight:700; background:#e9ecef; color:#1a73e8; padding:10px 14px;">
+                    ${totalTime}
+                </td>
+            `;
+            tbody.appendChild(totalRow);
+        }
         
         updateReportStats(data, localCount, expatCount);
     } catch (error) {
