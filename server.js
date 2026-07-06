@@ -3,6 +3,11 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const path = require('path');
 
+// =============================================
+// SET TIMEZONE TO ZAMBIAN TIME (CAT - UTC+2)
+// =============================================
+process.env.TZ = 'Africa/Lusaka';
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -40,6 +45,9 @@ const pool = new Pool({
     connectionTimeoutMillis: 10000,
     max: 20,
 });
+
+// Set PostgreSQL timezone to Zambian time
+pool.query("SET TIME ZONE 'Africa/Lusaka'").catch(console.error);
 
 // =============================================
 // TIME HELPER FUNCTIONS
@@ -87,6 +95,7 @@ async function runAutoMigration() {
     const client = await pool.connect();
     try {
         console.log('🔧 Checking database schema...');
+        console.log('🕐 Timezone:', new Date().toString());
         
         // 1. Create departments table
         await client.query(`
@@ -268,6 +277,7 @@ async function runAutoMigration() {
         }
 
         console.log('✅ Database migration completed successfully!');
+        console.log('🕐 Current Server Time:', new Date().toString());
     } catch (error) {
         console.error('❌ Migration error:', error.message);
     } finally {
@@ -310,7 +320,9 @@ app.get('/api/test', (req, res) => {
     res.json({ 
         success: true, 
         message: 'Server is running!',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        local_time: new Date().toString(),
+        timezone: 'Africa/Lusaka (CAT - UTC+2)'
     });
 });
 
@@ -320,7 +332,9 @@ app.get('/api/db-test', async (req, res) => {
         res.json({
             success: true,
             message: 'Database connected!',
-            time: result.rows[0].current_time
+            time: result.rows[0].current_time,
+            server_time: new Date().toString(),
+            timezone: 'Africa/Lusaka (CAT - UTC+2)'
         });
     } catch (error) {
         res.status(500).json({
@@ -682,7 +696,9 @@ async function getBreakTimeUsedToday(employeeName) {
                 COALESCE(SUM(b.break_in - b.break_out), INTERVAL '0') AS total_used
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
-            WHERE e.name = $1 AND b.break_date = CURRENT_DATE AND b.break_in IS NOT NULL
+            WHERE e.name = $1 
+            AND b.break_date = CURRENT_DATE AT TIME ZONE 'Africa/Lusaka' 
+            AND b.break_in IS NOT NULL
         `, [employeeName]);
         const totalUsed = result.rows[0].total_used;
         if (!totalUsed) {
@@ -733,9 +749,10 @@ async function canTakeBreak(employeeName) {
 }
 
 // =============================================
-// BREAK ROUTES
+// BREAK ROUTES - WITH ZAMBIAN TIME
 // =============================================
 
+// Get active breaks
 app.get('/api/active-breaks', async (req, res) => {
     try {
         const query = `
@@ -750,7 +767,8 @@ app.get('/api/active-breaks', async (req, res) => {
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
             JOIN departments d ON e.department_id = d.id
-            WHERE b.break_in IS NULL
+            WHERE b.break_in IS NULL 
+            AND b.break_date = CURRENT_DATE AT TIME ZONE 'Africa/Lusaka'
             ORDER BY b.break_out ASC
         `;
         const result = await pool.query(query);
@@ -761,6 +779,7 @@ app.get('/api/active-breaks', async (req, res) => {
     }
 });
 
+// Get breaks for specific employee
 app.get('/api/breaks/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     try {
@@ -799,6 +818,7 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
     }
 });
 
+// Check if employee is on break
 app.get('/api/active-break/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     try {
@@ -830,6 +850,7 @@ app.get('/api/active-break/:employeeName', async (req, res) => {
 app.post('/api/break-out', async (req, res) => {
     const { employeeName, breakDate, breakOut } = req.body;
     console.log('🔴 Break Out:', employeeName, breakDate, breakOut);
+    console.log('🕐 Server Time:', new Date().toString());
     
     try {
         const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
@@ -876,7 +897,8 @@ app.post('/api/break-out', async (req, res) => {
             used: checkResult.used,
             allowance: checkResult.allowance,
             employee_type: empType,
-            is_exceeded: isExceeded
+            is_exceeded: isExceeded,
+            server_time: new Date().toString()
         });
     } catch (error) {
         console.error('Error in /api/break-out:', error);
@@ -939,6 +961,7 @@ app.delete('/api/breaks/:id', async (req, res) => {
     }
 });
 
+// Get today's summary - WITH ZAMBIAN TIME
 app.get('/api/today/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     try {
@@ -949,7 +972,8 @@ app.get('/api/today/:employeeName', async (req, res) => {
                 COUNT(*) FILTER (WHERE b.break_in IS NULL) AS active_breaks
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
-            WHERE e.name = $1 AND b.break_date = CURRENT_DATE
+            WHERE e.name = $1 
+            AND b.break_date = CURRENT_DATE AT TIME ZONE 'Africa/Lusaka'
         `;
         const result = await pool.query(query, [employeeName]);
         res.json(result.rows[0]);
@@ -1012,8 +1036,8 @@ app.get('/api/break-status/:employeeName', async (req, res) => {
             remaining: minutesToTime(Math.max(0, remainingMinutes)),
             is_on_break: isOnBreak,
             is_exceeded: isExceeded,
-            // Only include message if exceeded
-            message: isExceeded ? `🎉 Congratulations ${employeeName}! You have exceeded the allowed break time. (${typeLabel} Employee)` : null
+            message: isExceeded ? `🎉 Congratulations ${employeeName}! You have exceeded the allowed break time. (${typeLabel} Employee)` : null,
+            server_time: new Date().toString()
         });
     } catch (error) {
         console.error('Error checking break status:', error);
@@ -1031,7 +1055,7 @@ app.get('/api/break-status/:employeeName', async (req, res) => {
 });
 
 // =============================================
-// BREAK ALERT ROUTE
+// BREAK ALERT ROUTE - WITH ZAMBIAN TIME
 // =============================================
 
 app.get('/api/break-alerts', async (req, res) => {
@@ -1047,7 +1071,8 @@ app.get('/api/break-alerts', async (req, res) => {
         `);
 
         const alerts = [];
-        const currentDate = new Date().toISOString().split('T')[0];
+        const currentDate = new Date().toLocaleString('en-US', { timeZone: 'Africa/Lusaka' }).split(',')[0];
+        const formattedDate = currentDate.split('/').map(p => p.padStart(2, '0')).join('/');
 
         for (const emp of employees.rows) {
             const settingKey = emp.employee_type === 'local' ? 'local_break_allowance' : 'expat_break_allowance';
@@ -1065,8 +1090,10 @@ app.get('/api/break-alerts', async (req, res) => {
                 SELECT 
                     COALESCE(SUM(b.break_in - b.break_out), INTERVAL '0') AS total_used
                 FROM break_log b
-                WHERE b.employee_id = $1 AND b.break_date = $2 AND b.break_in IS NOT NULL
-            `, [emp.employee_id, currentDate]);
+                WHERE b.employee_id = $1 
+                AND b.break_date = CURRENT_DATE AT TIME ZONE 'Africa/Lusaka' 
+                AND b.break_in IS NOT NULL
+            `, [emp.employee_id]);
 
             const usedStr = usedResult.rows[0].total_used || '00:00:00';
             
@@ -1118,7 +1145,9 @@ app.get('/api/break-alerts', async (req, res) => {
             success: true,
             total_exceeded: exceededAlerts.length,
             alerts: exceededAlerts,
-            all_employees: alerts
+            all_employees: alerts,
+            server_time: new Date().toString(),
+            timezone: 'Africa/Lusaka (CAT - UTC+2)'
         });
     } catch (error) {
         console.error('Error fetching break alerts:', error);
@@ -1180,6 +1209,8 @@ app.get('/api/break-report', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`🕐 Timezone: Africa/Lusaka (CAT - UTC+2)`);
+    console.log(`🕐 Current Server Time: ${new Date().toString()}`);
     console.log(`👑 Main Admin: admin / 535680`);
     console.log(`📦 Database: PostgreSQL`);
     console.log(`📊 Departments: Betrealated, Banking, CS, Checking`);
