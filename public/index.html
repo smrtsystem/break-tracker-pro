@@ -62,6 +62,9 @@
             <div id="alertEmployeesList" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px;"></div>
         </div>
 
+        <!-- ===== CONGRATULATIONS BANNER ===== -->
+        <div id="congratulationsBanner" style="display:none;"></div>
+
         <!-- Navigation Tabs -->
         <div class="nav-tabs">
             <button class="nav-tab active" onclick="switchTab('dashboard')">
@@ -117,7 +120,7 @@
                     </div>
                     <div class="field" style="flex:1; min-width:140px;">
                         <div id="statusDisplay" style="padding:10px 16px; background:#e9ecef; border-radius:10px; text-align:center; font-weight:600; min-width:140px; font-size:13px;">
-                            Status: Idle
+                            🟢 Status: <strong style="color:#28a745;">Available</strong>
                         </div>
                     </div>
                 </div>
@@ -374,6 +377,16 @@
                         </div>
                         <div>
                             <label style="font-weight: 600; font-size: 12px; color: #555; display: block; margin-bottom: 4px;">
+                                <i class="fas fa-filter"></i> Employee Type
+                            </label>
+                            <select id="reportTypeFilter" style="width:100%; padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; background: white;">
+                                <option value="all">All Types</option>
+                                <option value="local">🇱🇰 Local</option>
+                                <option value="expat">🌍 Expat</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; font-size: 12px; color: #555; display: block; margin-bottom: 4px;">
                                 <i class="fas fa-filter"></i> Status
                             </label>
                             <select id="reportStatusFilter" style="width:100%; padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; background: white;">
@@ -397,6 +410,8 @@
                         <span><i class="fas fa-clock" style="color:#1a73e8;"></i> Total Records: <strong id="reportTotalRecords" style="color:#1a2332;">0</strong></span>
                         <span><i class="fas fa-check-circle" style="color:#28a745;"></i> Completed: <strong id="reportCompletedCount" style="color:#1a2332;">0</strong></span>
                         <span><i class="fas fa-circle" style="color:#dc3545;"></i> On Break: <strong id="reportActiveCount" style="color:#1a2332;">0</strong></span>
+                        <span><i class="fas fa-users" style="color:#ff6b00;"></i> 🌍 Expat: <strong id="reportExpatCount" style="color:#1a2332;">0</strong></span>
+                        <span><i class="fas fa-users" style="color:#28a745;"></i> 🇱🇰 Local: <strong id="reportLocalCount" style="color:#1a2332;">0</strong></span>
                     </div>
                 </div>
 
