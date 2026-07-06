@@ -81,19 +81,6 @@ function minutesToTime(minutes) {
     return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 }
 
-function getZambianDate() {
-    return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lusaka' });
-}
-
-function getZambianTime() {
-    return new Date().toLocaleTimeString('en-US', { 
-        timeZone: 'Africa/Lusaka',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-    });
-}
-
 // =============================================
 // AUTO-MIGRATION
 // =============================================
@@ -527,7 +514,6 @@ app.put('/api/users/:username/password', async (req, res) => {
     }
 });
 
-// UPDATE USER - ONLY ADMIN CAN CHANGE ROLE
 app.put('/api/users/:username', async (req, res) => {
     const { username } = req.params;
     const { role, can_manage_users } = req.body;
@@ -751,7 +737,7 @@ async function canTakeBreak(employeeName) {
 // BREAK ROUTES - FIXED
 // =============================================
 
-// Get active breaks - FIXED
+// Get active breaks
 app.get('/api/active-breaks', async (req, res) => {
     try {
         const query = `
@@ -779,7 +765,7 @@ app.get('/api/active-breaks', async (req, res) => {
     }
 });
 
-// Get breaks for specific employee - FIXED
+// Get breaks for specific employee - FIXED (always returns array)
 app.get('/api/breaks/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     console.log('📊 Fetching breaks for:', employeeName);
@@ -814,10 +800,12 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
         `;
         const result = await pool.query(query, [employeeName]);
         console.log('✅ Found', result.rows.length, 'breaks for', employeeName);
-        res.json(result.rows);
+        // Always return an array
+        res.json(result.rows || []);
     } catch (error) {
         console.error('Error in /api/breaks:', error);
-        res.status(500).json({ error: error.message });
+        // Always return an empty array on error
+        res.status(500).json([]);
     }
 });
 
