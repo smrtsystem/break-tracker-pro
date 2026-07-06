@@ -73,12 +73,21 @@ function logout() {
 }
 
 // =============================================
-// LIVE CLOCK
+// LIVE CLOCK - ZAMBIAN TIME (CAT - UTC+2)
 // =============================================
 
 function updateClock() {
     const now = new Date();
-    document.getElementById('liveTime').textContent = now.toLocaleTimeString();
+    // Format time in Zambian timezone (CAT - UTC+2)
+    const options = {
+        timeZone: 'Africa/Lusaka',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    };
+    const timeStr = now.toLocaleTimeString('en-US', options);
+    document.getElementById('liveTime').textContent = timeStr;
 }
 setInterval(updateClock, 1000);
 updateClock();
@@ -835,21 +844,24 @@ function resetToDefault() {
 // =============================================
 
 function initCongratulationsMessage() {
-    // Check for congratulations message every 5 seconds
+    console.log('🎉 Initializing congratulations message checker...');
     if (congratsInterval) clearInterval(congratsInterval);
     congratsInterval = setInterval(() => {
         fetchCongratulationsMessage();
     }, 5000);
+    fetchCongratulationsMessage();
 }
 
 async function fetchCongratulationsMessage() {
     try {
-        // Get all employees who have exceeded limit
+        console.log('🔍 Fetching congratulations message...');
         const response = await fetch(`${API_URL}/api/break-alerts`);
         const data = await response.json();
         
+        console.log('📊 Break alerts response:', data);
+        
         if (data.success && data.alerts && data.alerts.length > 0) {
-            // Get the first exceeded employee (or show all)
+            console.log('🎉 Found', data.alerts.length, 'employee(s) who exceeded limit');
             const exceeded = data.alerts;
             let message = '';
             
@@ -864,19 +876,19 @@ async function fetchCongratulationsMessage() {
             
             showHomepageCongratulations(message);
         } else {
-            // Hide the congratulations banner if no one has exceeded
+            console.log('✅ No employee has exceeded break limit');
             hideCongratulationsBanner();
         }
     } catch (error) {
-        console.error('Error fetching congratulations message:', error);
+        console.error('❌ Error fetching congratulations message:', error);
     }
 }
 
 function showHomepageCongratulations(message) {
+    console.log('🎉 Showing congratulations banner:', message);
     let banner = document.getElementById('congratulationsBanner');
     
     if (!banner) {
-        // Create the banner if it doesn't exist
         banner = document.createElement('div');
         banner.id = 'congratulationsBanner';
         banner.style.cssText = `
@@ -893,7 +905,6 @@ function showHomepageCongratulations(message) {
             position: relative;
         `;
         
-        // Insert after alert div
         const alertDiv = document.getElementById('alert');
         if (alertDiv && alertDiv.parentNode) {
             alertDiv.parentNode.insertBefore(banner, alertDiv.nextSibling);
@@ -1263,8 +1274,15 @@ async function breakOut() {
     }
 
     const now = new Date();
-    const breakOut = now.toTimeString().slice(0, 5);
-    const breakDate = now.toISOString().split('T')[0];
+    // Use Zambian time
+    const options = {
+        timeZone: 'Africa/Lusaka',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    };
+    const breakOut = now.toLocaleTimeString('en-US', options);
+    const breakDate = now.toLocaleDateString('en-CA', { timeZone: 'Africa/Lusaka' });
 
     try {
         const response = await fetch(`${API_URL}/api/break-out`, {
@@ -1280,7 +1298,7 @@ async function breakOut() {
             await refreshData();
             await loadActiveBreaks();
             await fetchBreakAlerts();
-            await fetchCongratulationsMessage(); // Refresh congratulations message
+            await fetchCongratulationsMessage();
         } else {
             showAlert('❌ ' + result.error, 'error');
         }
@@ -1297,8 +1315,15 @@ async function breakIn() {
     }
 
     const now = new Date();
-    const breakIn = now.toTimeString().slice(0, 5);
-    const breakDate = now.toISOString().split('T')[0];
+    // Use Zambian time
+    const options = {
+        timeZone: 'Africa/Lusaka',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    };
+    const breakIn = now.toLocaleTimeString('en-US', options);
+    const breakDate = now.toLocaleDateString('en-CA', { timeZone: 'Africa/Lusaka' });
 
     try {
         const response = await fetch(`${API_URL}/api/break-in`, {
@@ -1314,7 +1339,7 @@ async function breakIn() {
             await refreshData();
             await loadActiveBreaks();
             await fetchBreakAlerts();
-            await fetchCongratulationsMessage(); // Refresh congratulations message
+            await fetchCongratulationsMessage();
         } else {
             showAlert('❌ ' + result.error, 'error');
         }
@@ -1585,7 +1610,7 @@ function exportReportPDF() {
     }
     
     const printWindow = window.open('', '_blank');
-    const date = new Date().toLocaleString();
+    const date = new Date().toLocaleString('en-US', { timeZone: 'Africa/Lusaka' });
     
     let tableRows = '';
     rows.forEach(row => {
@@ -1673,10 +1698,8 @@ function showAlert(message, type) {
     const alertDiv = document.getElementById('alert');
     alertDiv.textContent = message;
     
-    // Remove existing classes
     alertDiv.className = 'alert';
     
-    // Add appropriate class
     if (type === 'success') {
         alertDiv.classList.add('alert-success');
         alertDiv.style.display = 'block';
