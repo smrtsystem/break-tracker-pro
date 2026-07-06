@@ -53,15 +53,12 @@ pool.query("SET TIME ZONE 'Africa/Lusaka'").catch(console.error);
 // TIME HELPER FUNCTIONS
 // =============================================
 
-// Helper: Convert time string (HH:MM or HH:MM:SS) to minutes
 function timeToMinutes(timeStr) {
     if (!timeStr || typeof timeStr !== 'string') {
         return 0;
     }
-    
     const clean = timeStr.trim();
     const parts = clean.split(':');
-    
     if (parts.length === 2) {
         const hours = parseInt(parts[0]) || 0;
         const minutes = parseInt(parts[1]) || 0;
@@ -72,27 +69,22 @@ function timeToMinutes(timeStr) {
         const seconds = parseInt(parts[2]) || 0;
         return (hours * 60) + minutes + (seconds / 60);
     }
-    
     return 0;
 }
 
-// Helper: Convert minutes to time string (HH:MM)
 function minutesToTime(minutes) {
     if (typeof minutes !== 'number' || isNaN(minutes) || minutes < 0) {
         return '00:00';
     }
-    
     const hrs = Math.floor(minutes / 60);
     const mins = Math.round(minutes % 60);
     return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 }
 
-// Helper: Get Zambian date string
 function getZambianDate() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lusaka' });
 }
 
-// Helper: Get Zambian time string
 function getZambianTime() {
     return new Date().toLocaleTimeString('en-US', { 
         timeZone: 'Africa/Lusaka',
@@ -112,7 +104,6 @@ async function runAutoMigration() {
         console.log('🔧 Checking database schema...');
         console.log('🕐 Timezone:', new Date().toString());
         
-        // 1. Create departments table
         await client.query(`
             CREATE TABLE IF NOT EXISTS departments (
                 id SERIAL PRIMARY KEY,
@@ -122,7 +113,6 @@ async function runAutoMigration() {
         `);
         console.log('✅ Departments table ready');
 
-        // 2. Insert default departments
         await client.query(`
             INSERT INTO departments (name) VALUES 
                 ('Betrealated'),
@@ -133,7 +123,6 @@ async function runAutoMigration() {
         `);
         console.log('✅ Default departments inserted');
 
-        // 3. Check and add department_id column to employees
         const deptColCheck = await client.query(`
             SELECT column_name FROM information_schema.columns 
             WHERE table_name = 'employees' AND column_name = 'department_id'
@@ -157,7 +146,6 @@ async function runAutoMigration() {
             console.log('✅ department_id column added');
         }
 
-        // 4. Check and add employee_type column
         const typeColCheck = await client.query(`
             SELECT column_name FROM information_schema.columns 
             WHERE table_name = 'employees' AND column_name = 'employee_type'
@@ -175,7 +163,6 @@ async function runAutoMigration() {
             console.log('✅ employee_type column added');
         }
 
-        // 5. Check and add can_manage_users column to users
         const manageColCheck = await client.query(`
             SELECT column_name FROM information_schema.columns 
             WHERE table_name = 'users' AND column_name = 'can_manage_users'
@@ -190,7 +177,6 @@ async function runAutoMigration() {
             console.log('✅ can_manage_users column added');
         }
 
-        // 6. Ensure admin user exists
         await client.query(`
             INSERT INTO users (username, password, role, can_manage_users) 
             VALUES ('admin', '535680', 'admin', TRUE)
@@ -199,7 +185,6 @@ async function runAutoMigration() {
         `);
         console.log('✅ Admin user verified');
 
-        // 7. Insert sample employees
         const empCount = await client.query('SELECT COUNT(*) FROM employees');
         if (parseInt(empCount.rows[0].count) === 0) {
             console.log('🔧 Inserting sample employees...');
@@ -254,14 +239,12 @@ async function runAutoMigration() {
             console.log('✅ Sample employees inserted');
         }
 
-        // 8. Create indexes
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department_id);
             CREATE INDEX IF NOT EXISTS idx_employees_name ON employees(name);
             CREATE INDEX IF NOT EXISTS idx_employees_type ON employees(employee_type);
         `);
 
-        // 9. Create system_settings table
         await client.query(`
             CREATE TABLE IF NOT EXISTS system_settings (
                 id SERIAL PRIMARY KEY,
@@ -272,7 +255,6 @@ async function runAutoMigration() {
         `);
         console.log('✅ System settings table ready');
 
-        // 10. Insert default settings
         const settingsCheck = await client.query('SELECT COUNT(*) FROM system_settings');
         if (parseInt(settingsCheck.rows[0].count) === 0) {
             const defaults = [
@@ -299,10 +281,6 @@ async function runAutoMigration() {
         client.release();
     }
 }
-
-// =============================================
-// CONNECT AND MIGRATE DATABASE
-// =============================================
 
 async function connectDB() {
     let retries = 5;
@@ -558,7 +536,6 @@ app.put('/api/users/:username', async (req, res) => {
             return res.status(400).json({ error: 'Cannot change main admin' });
         }
         
-        // Only Admin can change role
         const currentUser = req.body.currentUser;
         if (currentUser && currentUser.role !== 'admin') {
             return res.status(403).json({ error: 'Only Admin can change user roles' });
@@ -743,7 +720,6 @@ async function getBreakTimeUsedToday(employeeName) {
     }
 }
 
-// Check if employee can take break - ALWAYS ALLOWED
 async function canTakeBreak(employeeName) {
     const activeCheck = await pool.query(`
         SELECT b.id FROM break_log b
@@ -772,10 +748,10 @@ async function canTakeBreak(employeeName) {
 }
 
 // =============================================
-// BREAK ROUTES - WITH ZAMBIAN TIME
+// BREAK ROUTES - FIXED
 // =============================================
 
-// Get active breaks
+// Get active breaks - FIXED
 app.get('/api/active-breaks', async (req, res) => {
     try {
         const query = `
@@ -785,8 +761,8 @@ app.get('/api/active-breaks', async (req, res) => {
                 e.employee_type,
                 d.name AS department,
                 b.id AS break_id,
-                TO_CHAR(b.break_out, 'HH24:MI') AS break_out,
-                TO_CHAR(b.break_date, 'DD Mon YYYY') AS break_date
+                TO_CHAR(b.break_out AT TIME ZONE 'Africa/Lusaka', 'HH24:MI') AS break_out,
+                TO_CHAR(b.break_date AT TIME ZONE 'Africa/Lusaka', 'DD Mon YYYY') AS break_date
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
             JOIN departments d ON e.department_id = d.id
@@ -795,6 +771,7 @@ app.get('/api/active-breaks', async (req, res) => {
             ORDER BY b.break_out ASC
         `;
         const result = await pool.query(query);
+        console.log('✅ Active breaks:', result.rows.length);
         res.json(result.rows);
     } catch (error) {
         console.error('Error in /api/active-breaks:', error);
@@ -802,9 +779,11 @@ app.get('/api/active-breaks', async (req, res) => {
     }
 });
 
-// Get breaks for specific employee - WITH ZAMBIAN TIME
+// Get breaks for specific employee - FIXED
 app.get('/api/breaks/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
+    console.log('📊 Fetching breaks for:', employeeName);
+    
     try {
         const query = `
             SELECT 
@@ -816,7 +795,7 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
                     ELSE 'Active'
                 END AS "IN",
                 CASE 
-                    WHEN b.break_in IS NOT NULL THEN TO_CHAR((b.break_in - b.break_out) AT TIME ZONE 'Africa/Lusaka', 'HH24:MI')
+                    WHEN b.break_in IS NOT NULL THEN TO_CHAR((b.break_in - b.break_out), 'HH24:MI')
                     ELSE '--:--'
                 END AS "Duration",
                 CASE 
@@ -834,6 +813,7 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
             LIMIT 50
         `;
         const result = await pool.query(query, [employeeName]);
+        console.log('✅ Found', result.rows.length, 'breaks for', employeeName);
         res.json(result.rows);
     } catch (error) {
         console.error('Error in /api/breaks:', error);
@@ -873,7 +853,6 @@ app.get('/api/active-break/:employeeName', async (req, res) => {
 app.post('/api/break-out', async (req, res) => {
     const { employeeName, breakDate, breakOut } = req.body;
     console.log('🔴 Break Out:', employeeName, breakDate, breakOut);
-    console.log('🕐 Server Time:', new Date().toString());
     
     try {
         const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
@@ -919,8 +898,7 @@ app.post('/api/break-out', async (req, res) => {
             used: checkResult.used,
             allowance: checkResult.allowance,
             employee_type: empType,
-            is_exceeded: isExceeded,
-            server_time: new Date().toString()
+            is_exceeded: isExceeded
         });
     } catch (error) {
         console.error('Error in /api/break-out:', error);
@@ -983,7 +961,6 @@ app.delete('/api/breaks/:id', async (req, res) => {
     }
 });
 
-// Get today's summary - WITH ZAMBIAN TIME
 app.get('/api/today/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     try {
@@ -1058,8 +1035,7 @@ app.get('/api/break-status/:employeeName', async (req, res) => {
             remaining: minutesToTime(Math.max(0, remainingMinutes)),
             is_on_break: isOnBreak,
             is_exceeded: isExceeded,
-            message: isExceeded ? `🎉 Congratulations ${employeeName}! You have exceeded the allowed break time. (${typeLabel} Employee)` : null,
-            server_time: new Date().toString()
+            message: isExceeded ? `🎉 Congratulations ${employeeName}! You have exceeded the allowed break time. (${typeLabel} Employee)` : null
         });
     } catch (error) {
         console.error('Error checking break status:', error);
@@ -1077,7 +1053,7 @@ app.get('/api/break-status/:employeeName', async (req, res) => {
 });
 
 // =============================================
-// BREAK ALERT ROUTE - WITH ZAMBIAN TIME
+// BREAK ALERT ROUTE
 // =============================================
 
 app.get('/api/break-alerts', async (req, res) => {
@@ -1093,7 +1069,6 @@ app.get('/api/break-alerts', async (req, res) => {
         `);
 
         const alerts = [];
-        const currentDate = getZambianDate();
 
         for (const emp of employees.rows) {
             const settingKey = emp.employee_type === 'local' ? 'local_break_allowance' : 'expat_break_allowance';
@@ -1130,22 +1105,6 @@ app.get('/api/break-alerts', async (req, res) => {
 
             const isExceeded = usedMinutes > allowanceMinutes;
 
-            let breakDetails = null;
-            if (isOnBreak) {
-                const breakResult = await pool.query(`
-                    SELECT 
-                        TO_CHAR(b.break_out, 'HH24:MI') as break_out,
-                        TO_CHAR(b.break_date, 'DD Mon YYYY') as break_date
-                    FROM break_log b
-                    WHERE b.employee_id = $1 AND b.break_in IS NULL
-                    ORDER BY b.break_out DESC
-                    LIMIT 1
-                `, [emp.employee_id]);
-                if (breakResult.rows.length > 0) {
-                    breakDetails = breakResult.rows[0];
-                }
-            }
-
             alerts.push({
                 employee_id: emp.employee_id,
                 employee_name: emp.name,
@@ -1155,7 +1114,6 @@ app.get('/api/break-alerts', async (req, res) => {
                 used: usedStr,
                 is_exceeded: isExceeded,
                 is_on_break: isOnBreak,
-                break_details: breakDetails,
                 exceeded_minutes: Math.round((usedMinutes - allowanceMinutes) * 10) / 10
             });
         }
@@ -1166,9 +1124,7 @@ app.get('/api/break-alerts', async (req, res) => {
             success: true,
             total_exceeded: exceededAlerts.length,
             alerts: exceededAlerts,
-            all_employees: alerts,
-            server_time: new Date().toString(),
-            timezone: 'Africa/Lusaka (CAT - UTC+2)'
+            all_employees: alerts
         });
     } catch (error) {
         console.error('Error fetching break alerts:', error);
@@ -1177,7 +1133,7 @@ app.get('/api/break-alerts', async (req, res) => {
 });
 
 // =============================================
-// REPORT ROUTE - WITH ZAMBIAN TIME AND TOTAL
+// REPORT ROUTE
 // =============================================
 
 app.get('/api/break-report', async (req, res) => {
@@ -1196,7 +1152,7 @@ app.get('/api/break-report', async (req, res) => {
                     ELSE 'Active'
                 END AS break_in,
                 CASE 
-                    WHEN b.break_in IS NOT NULL THEN TO_CHAR((b.break_in - b.break_out) AT TIME ZONE 'Africa/Lusaka', 'HH24:MI')
+                    WHEN b.break_in IS NOT NULL THEN TO_CHAR((b.break_in - b.break_out), 'HH24:MI')
                     ELSE 'In Progress'
                 END AS duration,
                 CASE 
@@ -1246,38 +1202,6 @@ app.get('/api/break-report', async (req, res) => {
 });
 
 // =============================================
-// GET TOTAL BREAK TIME FOR SPECIFIC DATE
-// =============================================
-
-app.get('/api/total-break-time/:employeeName/:date', async (req, res) => {
-    const { employeeName, date } = req.params;
-    try {
-        const result = await pool.query(`
-            SELECT 
-                COALESCE(SUM(b.break_in - b.break_out), INTERVAL '0') AS total_break_time
-            FROM break_log b
-            JOIN employees e ON b.employee_id = e.id
-            WHERE e.name = $1 
-            AND b.break_date = $2::date
-            AND b.break_in IS NOT NULL
-        `, [employeeName, date]);
-        
-        const totalTime = result.rows[0].total_break_time || '00:00:00';
-        res.json({
-            employee_name: employeeName,
-            date: date,
-            total_break_time: totalTime,
-            formatted_time: typeof totalTime === 'object' ? 
-                `${String(totalTime.hours || 0).padStart(2, '0')}:${String(totalTime.minutes || 0).padStart(2, '0')}` : 
-                totalTime
-        });
-    } catch (error) {
-        console.error('Error getting total break time:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// =============================================
 // START SERVER
 // =============================================
 
@@ -1290,5 +1214,4 @@ app.listen(PORT, () => {
     console.log(`📊 Departments: Betrealated, Banking, CS, Checking`);
     console.log(`👥 Employee Types: Local & Expat`);
     console.log(`⏱️ Break Limits: Local 1:00, Expat 2:30`);
-    console.log(`🎉 Congratulations message only shows when limit exceeded`);
 });
