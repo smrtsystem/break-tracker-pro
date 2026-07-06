@@ -217,6 +217,7 @@ async function runAutoMigration() {
                 { name: 'PUSHKAR KATHIK', dept: 'Checking', type: 'local' },
                 { name: 'PETER JONES', dept: 'Checking', type: 'expat' },
                 { name: 'LISA MARTINEZ', dept: 'Checking', type: 'expat' },
+                { name: 'HEMANG KERUNG', dept: 'Betrealated', type: 'local' },
             ];
 
             for (const emp of sampleEmployees) {
@@ -731,11 +732,12 @@ async function canTakeBreak(employeeName) {
 }
 
 // =============================================
-// BREAK ROUTES - COMPLETE FIXED WITH DEBUG
+// BREAK ROUTES - COMPLETE FIXED (No TO_CHAR on TIME with timezone)
 // =============================================
 
-// GET ACTIVE BREAKS
+// GET ACTIVE BREAKS - FIXED
 app.get('/api/active-breaks', async (req, res) => {
+    console.log('🔍 Fetching active breaks...');
     try {
         const query = `
             SELECT 
@@ -744,14 +746,14 @@ app.get('/api/active-breaks', async (req, res) => {
                 COALESCE(e.employee_type, 'local') AS employee_type,
                 COALESCE(d.name, 'N/A') AS department,
                 b.id AS break_id,
-                TO_CHAR(b.break_out AT TIME ZONE 'Africa/Lusaka', 'HH24:MI') AS break_out,
-                TO_CHAR(b.break_date AT TIME ZONE 'Africa/Lusaka', 'DD Mon YYYY') AS break_date
+                TO_CHAR(b.break_out::time, 'HH24:MI') AS break_out,
+                TO_CHAR(b.break_date, 'DD Mon YYYY') AS break_date
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
             LEFT JOIN departments d ON e.department_id = d.id
             WHERE b.break_in IS NULL 
             AND b.break_date = CURRENT_DATE AT TIME ZONE 'Africa/Lusaka'
-            ORDER BY b.break_out ASC
+            ORDER BY b.break_out::time ASC
         `;
         const result = await pool.query(query);
         console.log('✅ Active breaks found:', result.rows.length);
@@ -762,7 +764,7 @@ app.get('/api/active-breaks', async (req, res) => {
     }
 });
 
-// GET BREAKS FOR SPECIFIC EMPLOYEE
+// GET BREAKS FOR SPECIFIC EMPLOYEE - FIXED
 app.get('/api/breaks/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     console.log('📊 Fetching breaks for:', employeeName);
@@ -771,10 +773,10 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
         const query = `
             SELECT 
                 b.id AS break_id,
-                TO_CHAR(b.break_date AT TIME ZONE 'Africa/Lusaka', 'DD Mon YYYY') AS date,
-                TO_CHAR(b.break_out AT TIME ZONE 'Africa/Lusaka', 'HH24:MI') AS "Break",
+                TO_CHAR(b.break_date, 'DD Mon YYYY') AS date,
+                TO_CHAR(b.break_out::time, 'HH24:MI') AS "Break",
                 CASE 
-                    WHEN b.break_in IS NOT NULL THEN TO_CHAR(b.break_in AT TIME ZONE 'Africa/Lusaka', 'HH24:MI')
+                    WHEN b.break_in IS NOT NULL THEN TO_CHAR(b.break_in::time, 'HH24:MI')
                     ELSE 'Active'
                 END AS "IN",
                 CASE 
@@ -792,12 +794,11 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
             JOIN employees e ON b.employee_id = e.id
             LEFT JOIN departments d ON e.department_id = d.id
             WHERE e.name = $1
-            ORDER BY b.break_date DESC, b.break_out DESC
+            ORDER BY b.break_date DESC, b.break_out::time DESC
             LIMIT 100
         `;
         const result = await pool.query(query, [employeeName]);
         console.log('✅ Found', result.rows.length, 'breaks for', employeeName);
-        console.log('🔍 First row:', result.rows[0] || 'No data');
         res.json(result.rows);
     } catch (error) {
         console.error('❌ Error in /api/breaks:', error);
@@ -805,21 +806,21 @@ app.get('/api/breaks/:employeeName', async (req, res) => {
     }
 });
 
-// CHECK IF EMPLOYEE IS ON BREAK
+// CHECK IF EMPLOYEE IS ON BREAK - FIXED
 app.get('/api/active-break/:employeeName', async (req, res) => {
     const { employeeName } = req.params;
     try {
         const query = `
             SELECT 
                 b.id AS break_id,
-                TO_CHAR(b.break_out, 'HH24:MI') AS break_out,
+                TO_CHAR(b.break_out::time, 'HH24:MI') AS break_out,
                 b.break_date,
                 e.id AS employee_id
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
             WHERE e.name = $1 
             AND b.break_in IS NULL
-            ORDER BY b.break_out DESC
+            ORDER BY b.break_out::time DESC
             LIMIT 1
         `;
         const result = await pool.query(query, [employeeName]);
@@ -834,40 +835,28 @@ app.get('/api/active-break/:employeeName', async (req, res) => {
 app.post('/api/break-out', async (req, res) => {
     const { employeeName, breakDate, breakOut } = req.body;
     console.log('🔴 Break Out:', employeeName, breakDate, breakOut);
-    console.log('🕐 Server Time:', new Date().toString());
     
     try {
-        // First check if employee exists
         const employee = await pool.query('SELECT id FROM employees WHERE name = $1', [employeeName]);
         if (employee.rows.length === 0) {
-            console.log('❌ Employee not found:', employeeName);
             return res.status(404).json({ error: 'Employee not found' });
         }
         
-        const employeeId = employee.rows[0].id;
-        console.log('✅ Employee ID:', employeeId);
+        const checkResult = await canTakeBreak(employeeName);
         
-        // Check if already on break
-        const activeCheck = await pool.query(
-            `SELECT id FROM break_log 
-             WHERE employee_id = $1 AND break_in IS NULL`,
-            [employeeId]
-        );
-        
-        if (activeCheck.rows.length > 0) {
+        if (!checkResult.allowed) {
             return res.status(400).json({ 
-                error: 'Already on break! Please click "In" first.' 
+                error: checkResult.reason
             });
         }
         
-        // Insert break
-        const insertResult = await pool.query(
+        const employeeId = employee.rows[0].id;
+        
+        await pool.query(
             `INSERT INTO break_log (employee_id, break_date, break_out) 
-             VALUES ($1, $2, $3) RETURNING id`,
+             VALUES ($1, $2, $3)`,
             [employeeId, breakDate, breakOut]
         );
-        
-        console.log('✅ Break inserted with ID:', insertResult.rows[0].id);
         
         const empTypeResult = await pool.query(
             'SELECT employee_type FROM employees WHERE id = $1',
@@ -877,16 +866,24 @@ app.post('/api/break-out', async (req, res) => {
         const typeLabel = empType === 'local' ? 'Local' : 'Expat';
         
         let message = `✅ ${employeeName} started break at ${breakOut}`;
+        let isExceeded = checkResult.is_exceeded || false;
+        
+        if (isExceeded) {
+            message = `🎉 Congratulations ${employeeName}! You have exceeded the allowed break time. (${typeLabel} Employee)`;
+        }
         
         console.log('✅ Break started for:', employeeName);
         res.json({ 
             success: true, 
             message: message,
+            remaining: checkResult.remaining,
+            used: checkResult.used,
+            allowance: checkResult.allowance,
             employee_type: empType,
-            is_exceeded: false
+            is_exceeded: isExceeded
         });
     } catch (error) {
-        console.error('❌ Error in /api/break-out:', error);
+        console.error('Error in /api/break-out:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -907,7 +904,7 @@ app.post('/api/break-in', async (req, res) => {
         const activeBreak = await pool.query(
             `SELECT b.id FROM break_log b
              WHERE b.employee_id = $1 AND b.break_in IS NULL
-             ORDER BY b.break_out DESC
+             ORDER BY b.break_out::time DESC
              LIMIT 1`,
             [employeeId]
         );
@@ -1137,10 +1134,10 @@ app.get('/api/break-report', async (req, res) => {
                 e.name AS employee_name,
                 COALESCE(e.employee_type, 'local') AS employee_type,
                 COALESCE(d.name, 'N/A') AS department,
-                TO_CHAR(b.break_date AT TIME ZONE 'Africa/Lusaka', 'DD Mon YYYY') AS break_date,
-                TO_CHAR(b.break_out AT TIME ZONE 'Africa/Lusaka', 'HH24:MI') AS break_out,
+                TO_CHAR(b.break_date, 'DD Mon YYYY') AS break_date,
+                TO_CHAR(b.break_out::time, 'HH24:MI') AS break_out,
                 CASE 
-                    WHEN b.break_in IS NOT NULL THEN TO_CHAR(b.break_in AT TIME ZONE 'Africa/Lusaka', 'HH24:MI')
+                    WHEN b.break_in IS NOT NULL THEN TO_CHAR(b.break_in::time, 'HH24:MI')
                     ELSE 'Active'
                 END AS break_in,
                 CASE 
@@ -1183,7 +1180,7 @@ app.get('/api/break-report', async (req, res) => {
             paramCount++;
         }
         
-        query += ` ORDER BY b.break_date DESC, b.break_out DESC LIMIT 500`;
+        query += ` ORDER BY b.break_date DESC, b.break_out::time DESC LIMIT 500`;
         
         const result = await pool.query(query, params);
         console.log('✅ Report data found:', result.rows.length);
@@ -1195,7 +1192,7 @@ app.get('/api/break-report', async (req, res) => {
 });
 
 // =============================================
-// DEBUG ROUTE - Check what's in the database
+// DEBUG ROUTE
 // =============================================
 
 app.get('/api/debug/breaks', async (req, res) => {
@@ -1205,8 +1202,8 @@ app.get('/api/debug/breaks', async (req, res) => {
                 b.id,
                 e.name AS employee_name,
                 b.break_date,
-                b.break_out,
-                b.break_in,
+                TO_CHAR(b.break_out::time, 'HH24:MI') AS break_out,
+                CASE WHEN b.break_in IS NOT NULL THEN TO_CHAR(b.break_in::time, 'HH24:MI') ELSE NULL END AS break_in,
                 b.created_at
             FROM break_log b
             JOIN employees e ON b.employee_id = e.id
